@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{EC3E0B97-D124-4845-9734-599EB33EFE53}</ProjectGuid>
+    <Keyword>Linux</Keyword><RootNamespace>TeslaNodeAgent</RootNamespace><MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <ApplicationType>Linux</ApplicationType><ApplicationTypeRevision>1.0</ApplicationTypeRevision><TargetLinuxPlatform>Generic</TargetLinuxPlatform>
+    <LinuxProjectType>{D51BCBC9-82E9-4017-911E-C93873C4EA2B}</LinuxProjectType>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>Remote_GCC_1_0</PlatformToolset><UseDebugLibraries>true</UseDebugLibraries></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>Remote_GCC_1_0</PlatformToolset><UseDebugLibraries>false</UseDebugLibraries></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" /><ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="..\TeslaSources.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <TargetName>tesla_node_agent</TargetName><TargetExt></TargetExt>
+    <RemoteRootDir>~/tesla-auth</RemoteRootDir><RemoteProjectRelDir>source</RemoteProjectRelDir>
+    <RemoteOutRelDir>bin/$(Configuration)</RemoteOutRelDir><RemoteIntRelDir>obj/$(Configuration)</RemoteIntRelDir>
+    <OutDir>$(TeslaRoot)out\linux\$(Configuration)\</OutDir><IntDir>$(TeslaRoot)out\obj\linux\$(Configuration)\</IntDir>
+    <LocalRemoteCopySources>true</LocalRemoteCopySources><RemoteCopySourceMethod>rsync</RemoteCopySourceMethod>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><AdditionalIncludeDirectories>$(TeslaSourceRoot)node;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><PositionIndependentCode>true</PositionIndependentCode></ClCompile>
+    <Link><LibraryDependencies>crypto;pthread;%(LibraryDependencies)</LibraryDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="$(TeslaSourceRoot)node\*.h" />
+    <ClCompile Include="$(TeslaSourceRoot)node\*.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" /><ImportGroup Label="ExtensionTargets" />
+</Project>
+
