@@ -784,6 +784,31 @@ bool TcpManagementServer::bHandleFrame(
         roleClient = std::get<protocol::ClientHelloControlDetails>(
             msgMessage.varDetails()
         ).roleClient();
+        if (roleClient == protocol::TcpClientRole::Monitor)
+        {
+            const timeval tvMonitorSendTimeout{0, 0};
+            if (setsockopt(
+                    ptrClient->atmSocket().load(),
+                    SOL_SOCKET,
+                    SO_SNDTIMEO,
+                    &tvMonitorSendTimeout,
+                    sizeof(tvMonitorSendTimeout)
+                ) != 0)
+            {
+                bSendControlMessage(
+                    ptrClient,
+                    protocol::NodeControlMessage(
+                        protocol::ErrorResponseControlDetails(
+                            "",
+                            "MONITOR_SOCKET_CONFIGURATION_FAILED",
+                            std::strerror(errno)
+                        )
+                    )
+                );
+                return false;
+            }
+        }
+
         bHelloReceived = true;
         ptrClient->setRole(roleClient);
         return true;
