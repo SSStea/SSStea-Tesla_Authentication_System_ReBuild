@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="QtSettings">
+    <QtInstall>$(TeslaQtInstall)</QtInstall>
+    <QtModules>core;gui;widgets;network;charts</QtModules>
+    <QtBuildConfig Condition="'$(Configuration)'=='Debug'">debug</QtBuildConfig>
+    <QtBuildConfig Condition="'$(Configuration)'!='Debug'">release</QtBuildConfig>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(OpenSslRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>
+
