@@ -138,7 +138,7 @@ AuthenticationMetricsView::AuthenticationMetricsView(QWidget* pParent)
         pParent,
         QStringLiteral("计算开销"),
         QStringLiteral(
-            "原生TESLA每个点是一包验证；改进TESLA每个点是一组完整验证。"
+            "TESLA每个点是一包验证；S-TESLA每个点是一组完整验证。"
             "耗时不包含披露等待、GUI刷新、日志和文件Hash。"
         ),
         m_pComputationSummary,
@@ -180,10 +180,10 @@ AuthenticationMetricsView::AuthenticationMetricsView(QWidget* pParent)
         pEnergyChart
     );
     pEnergyModel->setText(QStringLiteral("明确口径：估算能耗，非电池实际消耗"));
-    configureSeries(m_pNativeEnergySeries, QStringLiteral("原生TESLA"));
-    configureSeries(m_pFastEnergySeries, QStringLiteral("改进 FAST_GROUP_PASS"));
-    configureSeries(m_pFallbackEnergySeries, QStringLiteral("改进 KS_RS_FALLBACK"));
-    configureSeries(m_pIncompleteEnergySeries, QStringLiteral("改进 INCOMPLETE_GROUP_TAGS"));
+    configureSeries(m_pNativeEnergySeries, QStringLiteral("TESLA"));
+    configureSeries(m_pFastEnergySeries, QStringLiteral("S-TESLA FAST_GROUP_PASS"));
+    configureSeries(m_pFallbackEnergySeries, QStringLiteral("S-TESLA KS_RS_FALLBACK"));
+    configureSeries(m_pIncompleteEnergySeries, QStringLiteral("S-TESLA INCOMPLETE_GROUP_TAGS"));
     configureSeries(m_pIneligibleEnergySeries, QStringLiteral("其他异常/未完成（不可比）"));
     pEnergyChart->addAxis(m_pEnergyXAxis, Qt::AlignBottom);
     pEnergyChart->addAxis(m_pEnergyYAxis, Qt::AlignLeft);

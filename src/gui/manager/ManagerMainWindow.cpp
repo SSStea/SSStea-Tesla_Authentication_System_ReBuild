@@ -386,8 +386,8 @@ QWidget* ManagerMainWindow::pCreateConfigurationPage()
     QFormLayout* pParameterLayout = new QFormLayout(pParameterGroup);
     m_pModeCombo = new QComboBox(pParameterGroup);
     m_pModeCombo->addItems({
-        QStringLiteral("原生TESLA"),
-        QStringLiteral("改进TESLA")
+        QStringLiteral("TESLA"),
+        QStringLiteral("S-TESLA")
     });
     m_pAlgorithmCombo = new QComboBox(pParameterGroup);
     m_pAlgorithmCombo->addItems({
@@ -1120,8 +1120,8 @@ void ManagerMainWindow::validateAuthenticationInputs()
             QStringLiteral("认证模式：%1\n通信开销总字节数：%2B")
                 .arg(
                     bImproved
-                        ? QStringLiteral("改进TESLA")
-                        : QStringLiteral("原生TESLA")
+                        ? QStringLiteral("S-TESLA")
+                        : QStringLiteral("TESLA")
                 )
                 .arg(sumCommunication.u64TotalBytes())
         );

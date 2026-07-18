@@ -153,8 +153,8 @@ QString strAlgorithm(AuthenticationCryptoAlgorithm algCrypto)
 QString strMode(UdpAuthenticationMode modeAuthentication)
 {
     return modeAuthentication == UdpAuthenticationMode::Native
-        ? QStringLiteral("原生TESLA")
-        : QStringLiteral("改进TESLA");
+        ? QStringLiteral("TESLA")
+        : QStringLiteral("S-TESLA");
 }
 
 QString strSource(PacketSourceType typeSource)

@@ -535,8 +535,8 @@ void AttackTestMainWindow::refreshContext()
         "%1 / %2，数据报文=%3，每间隔=%4，间隔=%5ms，披露延迟=%6，分组=%7，阈值=%8"
     )
         .arg(detContext.modeAuthentication() == UdpAuthenticationMode::Native
-            ? QStringLiteral("原生TESLA")
-            : QStringLiteral("改进TESLA"))
+            ? QStringLiteral("TESLA")
+            : QStringLiteral("S-TESLA"))
         .arg(strCryptoAlgorithmCode(detContext.algCryptoAlgorithm()))
         .arg(detContext.u32DataPacketCount())
         .arg(detContext.u32PacketsPerInterval())
