@@ -110,7 +110,11 @@ private:
     std::vector<std::shared_ptr<ClientConnection>> m_vecClients;
     std::vector<std::thread>         m_vecClientThreads;
     mutable std::mutex               m_mtxMonitorQueue;
-    std::condition_variable          m_cndMonitorQueue;
+    mutable std::condition_variable  m_cndMonitorQueue;
+    mutable std::deque<std::pair<
+        std::shared_ptr<ClientConnection>,
+        protocol::NodeControlMessage
+    >>                               m_deqMonitorControlQueue;
     std::deque<protocol::NodeControlMessage> m_deqMonitorQueue;
     std::deque<metrics::AuthenticationMetricRecord> m_deqMetricQueue;
     std::atomic<std::size_t>         m_nDroppedMonitorEventCount{0};

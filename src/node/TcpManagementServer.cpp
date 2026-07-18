@@ -28,6 +28,7 @@ namespace
 {
 constexpr int MAX_PENDING_CONNECTIONS = 32;
 constexpr std::size_t MAX_CLIENTS = 32;
+constexpr std::size_t MAX_MONITOR_CONTROL_QUEUE = 512;
 constexpr std::size_t MAX_MONITOR_EVENT_QUEUE = 4096;
 constexpr std::size_t ABNORMAL_SNAPSHOT_BATCH_SIZE = 64;
 constexpr std::size_t MAX_METRIC_EVENT_QUEUE = 8192;
@@ -249,6 +250,7 @@ void TcpManagementServer::stop() noexcept
     m_bRunning = false;
     {
         std::lock_guard<std::mutex> lckQueue(m_mtxMonitorQueue);
+        m_deqMonitorControlQueue.clear();
         m_deqMonitorQueue.clear();
         m_deqMetricQueue.clear();
     }
@@ -286,6 +288,7 @@ void TcpManagementServer::stop() noexcept
     m_vecClients.clear();
     {
         std::lock_guard<std::mutex> lckQueue(m_mtxMonitorQueue);
+        m_deqMonitorControlQueue.clear();
         m_deqMonitorQueue.clear();
         m_deqMetricQueue.clear();
     }
@@ -411,6 +414,7 @@ void TcpManagementServer::monitorBroadcastLoop()
     while (true)
     {
         std::optional<protocol::NodeControlMessage> optMessage;
+        std::shared_ptr<ClientConnection> ptrTargetClient;
         {
             std::unique_lock<std::mutex> lckQueue(m_mtxMonitorQueue);
             m_cndMonitorQueue.wait(
@@ -418,28 +422,41 @@ void TcpManagementServer::monitorBroadcastLoop()
                 [this]()
                 {
                     return !m_bRunning.load()
+                        || !m_deqMonitorControlQueue.empty()
                         || !m_deqMonitorQueue.empty()
                         || !m_deqMetricQueue.empty();
                 }
             );
             if (!m_bRunning.load()
+                && m_deqMonitorControlQueue.empty()
                 && m_deqMonitorQueue.empty()
                 && m_deqMetricQueue.empty())
             {
                 return;
             }
 
+            if (!m_deqMonitorControlQueue.empty())
+            {
+                ptrTargetClient = std::move(
+                    m_deqMonitorControlQueue.front().first
+                );
+                optMessage = std::move(
+                    m_deqMonitorControlQueue.front().second
+                );
+                m_deqMonitorControlQueue.pop_front();
+            }
+
             const bool bHasMetrics = !m_deqMetricQueue.empty();
             const bool bHasObservations = !m_deqMonitorQueue.empty();
             const bool bSendMetricBatch = bHasMetrics
                 && (!bHasObservations || bPreferMetricBatch);
-            if (bHasMetrics && bHasObservations)
+            if (!optMessage.has_value() && bHasMetrics && bHasObservations)
             {
                 // 两类高频队列同时有数据时交替发送，避免指标或异常观测长期饥饿。
                 bPreferMetricBatch = !bPreferMetricBatch;
             }
 
-            if (bSendMetricBatch)
+            if (!optMessage.has_value() && bSendMetricBatch)
             {
                 // 低速指标最多等待25 ms以合并同一TCP帧；达到批量上限、停止或有观测事件时立即发送。
                 if (m_deqMetricQueue.size() < METRIC_BATCH_SIZE
@@ -452,6 +469,7 @@ void TcpManagementServer::monitorBroadcastLoop()
                         [this]()
                         {
                             return !m_bRunning.load()
+                                || !m_deqMonitorControlQueue.empty()
                                 || m_deqMetricQueue.size()
                                     >= METRIC_BATCH_SIZE
                                 || !m_deqMonitorQueue.empty();
@@ -463,26 +481,48 @@ void TcpManagementServer::monitorBroadcastLoop()
                     }
                 }
 
-                std::vector<metrics::AuthenticationMetricRecord> vecMetrics;
-                const std::size_t nBatchSize = std::min(
-                    METRIC_BATCH_SIZE,
-                    m_deqMetricQueue.size()
-                );
-                vecMetrics.reserve(nBatchSize);
-                for (std::size_t nIndex = 0; nIndex < nBatchSize; ++nIndex)
+                if (!m_deqMonitorControlQueue.empty())
                 {
-                    vecMetrics.push_back(std::move(m_deqMetricQueue.front()));
-                    m_deqMetricQueue.pop_front();
+                    ptrTargetClient = std::move(
+                        m_deqMonitorControlQueue.front().first
+                    );
+                    optMessage = std::move(
+                        m_deqMonitorControlQueue.front().second
+                    );
+                    m_deqMonitorControlQueue.pop_front();
                 }
-                optMessage.emplace(protocol::MetricEventControlDetails(
-                    std::move(vecMetrics)
-                ));
+                else
+                {
+                    std::vector<metrics::AuthenticationMetricRecord> vecMetrics;
+                    const std::size_t nBatchSize = std::min(
+                        METRIC_BATCH_SIZE,
+                        m_deqMetricQueue.size()
+                    );
+                    vecMetrics.reserve(nBatchSize);
+                    for (std::size_t nIndex = 0; nIndex < nBatchSize; ++nIndex)
+                    {
+                        vecMetrics.push_back(std::move(m_deqMetricQueue.front()));
+                        m_deqMetricQueue.pop_front();
+                    }
+                    optMessage.emplace(protocol::MetricEventControlDetails(
+                        std::move(vecMetrics)
+                    ));
+                }
             }
-            else
+            else if (!optMessage.has_value())
             {
                 optMessage = std::move(m_deqMonitorQueue.front());
                 m_deqMonitorQueue.pop_front();
             }
+        }
+
+        if (ptrTargetClient != nullptr)
+        {
+            if (!bWriteControlMessage(ptrTargetClient, optMessage.value()))
+            {
+                closeSocket(ptrTargetClient->atmSocket());
+            }
+            continue;
         }
 
         std::vector<std::shared_ptr<ClientConnection>> vecClients;
@@ -499,7 +539,7 @@ void TcpManagementServer::monitorBroadcastLoop()
                 continue;
             }
 
-            if (!bSendControlMessage(ptrClient, optMessage.value()))
+            if (!bWriteControlMessage(ptrClient, optMessage.value()))
             {
                 closeSocket(ptrClient->atmSocket());
             }
@@ -1056,7 +1096,31 @@ bool TcpManagementServer::bSendControlMessage(
     const protocol::NodeControlMessage& msgMessage
 ) const noexcept
 {
-    return bWriteControlMessage(ptrClient, msgMessage);
+    try
+    {
+        if (ptrClient->bHelloReceived()
+            && ptrClient->roleClient() == protocol::TcpClientRole::Monitor)
+        {
+            {
+                std::lock_guard<std::mutex> lckQueue(m_mtxMonitorQueue);
+                if (m_deqMonitorControlQueue.size()
+                    >= MAX_MONITOR_CONTROL_QUEUE)
+                {
+                    return false;
+                }
+
+                m_deqMonitorControlQueue.emplace_back(ptrClient, msgMessage);
+            }
+            m_cndMonitorQueue.notify_one();
+            return true;
+        }
+
+        return bWriteControlMessage(ptrClient, msgMessage);
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 bool TcpManagementServer::bWriteControlMessage(
