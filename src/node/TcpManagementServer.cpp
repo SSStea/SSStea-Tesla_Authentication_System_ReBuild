@@ -1056,6 +1056,14 @@ bool TcpManagementServer::bSendControlMessage(
     const protocol::NodeControlMessage& msgMessage
 ) const noexcept
 {
+    return bWriteControlMessage(ptrClient, msgMessage);
+}
+
+bool TcpManagementServer::bWriteControlMessage(
+    const std::shared_ptr<ClientConnection>& ptrClient,
+    const protocol::NodeControlMessage& msgMessage
+) const noexcept
+{
     try
     {
         const protocol::TcpFrame frmResponse(protocol::JsonControlFramePayload(

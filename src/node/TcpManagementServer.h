@@ -89,6 +89,10 @@ private:
         const std::shared_ptr<ClientConnection>& ptrClient,
         const protocol::NodeControlMessage& msgMessage
     ) const noexcept;
+    bool bWriteControlMessage(
+        const std::shared_ptr<ClientConnection>& ptrClient,
+        const protocol::NodeControlMessage& msgMessage
+    ) const noexcept;
 
     std::string                      m_strBindAddress;
     std::uint16_t                    m_u16Port;
