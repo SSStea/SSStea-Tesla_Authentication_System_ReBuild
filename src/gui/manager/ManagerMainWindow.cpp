@@ -5,6 +5,7 @@
 #include "workload/FileWorkload.h"
 
 #include <QAbstractItemView>
+#include <QAbstractSpinBox>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCryptographicHash>
@@ -514,6 +515,8 @@ QWidget* ManagerMainWindow::pCreateConfigurationPage()
              m_pThresholdSpin
          })
     {
+        pSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+
         connect(
             pSpin,
             &QSpinBox::valueChanged,
@@ -600,6 +603,17 @@ QWidget* ManagerMainWindow::pCreateExperimentPage()
     m_pFaultDelaySpin = new QSpinBox(pFaultGroup);
     m_pFaultDelaySpin->setRange(1, 10000);
     m_pFaultDelaySpin->setValue(100);
+    m_pFaultLossRateSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    for (QSpinBox* pSpin : {
+             m_pFaultProtectedGroupSpin,
+             m_pFaultStartPacketSpin,
+             m_pFaultDurationSpin,
+             m_pFaultDelaySpin
+         })
+    {
+        pSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    }
+
     m_pFaultStateLabel = new QLabel(QStringLiteral("未配置"), pFaultGroup);
     m_pFaultPrepareButton = new QPushButton(
         QStringLiteral("下发故障注入计划"),
