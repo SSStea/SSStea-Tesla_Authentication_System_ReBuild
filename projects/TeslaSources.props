@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TeslaRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\'))</TeslaRoot>
+    <TeslaSourceRoot>$(TeslaRoot)src\</TeslaSourceRoot>
+    <TeslaThirdPartyRoot>$(TeslaRoot)third_party\</TeslaThirdPartyRoot>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(TeslaSourceRoot);$(TeslaThirdPartyRoot);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <CppLanguageStandard>c++17</CppLanguageStandard>
+      <PreprocessorDefinitions>TESLA_GIT_COMMIT=&quot;msbuild&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="$(TeslaSourceRoot)algorithm\*.h" />
+    <ClInclude Include="$(TeslaSourceRoot)crypto\*.h" />
+    <ClInclude Include="$(TeslaSourceRoot)metrics\*.h" />
+    <ClInclude Include="$(TeslaSourceRoot)protocol\*.h" />
+    <ClInclude Include="$(TeslaSourceRoot)workload\*.h" />
+    <ClInclude Include="$(TeslaThirdPartyRoot)nlohmann\json.hpp" />
+    <ClCompile Include="$(TeslaSourceRoot)algorithm\*.cpp" />
+    <ClCompile Include="$(TeslaSourceRoot)crypto\*.cpp" />
+    <ClCompile Include="$(TeslaSourceRoot)metrics\*.cpp" />
+    <ClCompile Include="$(TeslaSourceRoot)protocol\*.cpp" />
+    <ClCompile Include="$(TeslaSourceRoot)workload\*.cpp" />
+  </ItemGroup>
+</Project>
