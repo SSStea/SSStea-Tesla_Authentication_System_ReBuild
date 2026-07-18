@@ -262,17 +262,17 @@ void TcpManagementServer::stop() noexcept
         m_thrAccept.join();
     }
 
-    if (m_thrMonitorBroadcast.joinable())
-    {
-        m_thrMonitorBroadcast.join();
-    }
-
     {
         std::lock_guard<std::mutex> lckClients(m_mtxClients);
         for (const std::shared_ptr<ClientConnection>& ptrClient : m_vecClients)
         {
             closeSocket(ptrClient->atmSocket());
         }
+    }
+
+    if (m_thrMonitorBroadcast.joinable())
+    {
+        m_thrMonitorBroadcast.join();
     }
 
     for (std::thread& thrClient : m_vecClientThreads)
