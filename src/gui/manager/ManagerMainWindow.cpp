@@ -1739,9 +1739,44 @@ void ManagerMainWindow::applyStyle()
             color: #94a3b8;
             background: #eef2f7;
         }
-        QTableWidget, QGroupBox, QTabWidget::pane {
+        QTableWidget, QTabWidget::pane {
             background: white;
             border: 1px solid #dbe3ec;
+        }
+        QGroupBox {
+            background: white;
+            border: 1px solid #dbe3ec;
+            border-radius: 6px;
+            margin-top: 14px;
+            padding: 8px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            left: 10px;
+            padding: 0 6px;
+            background: white;
+            color: #17365d;
+            font-weight: 600;
+        }
+        QGroupBox QLabel {
+            background: transparent;
+        }
+        QGroupBox QComboBox,
+        QGroupBox QAbstractSpinBox,
+        QGroupBox QLineEdit,
+        QGroupBox QTextEdit {
+            background: #f8fafc;
+            border: 1px solid #d7dee8;
+            border-radius: 4px;
+            padding: 4px 6px;
+        }
+        QGroupBox QComboBox:disabled,
+        QGroupBox QAbstractSpinBox:disabled,
+        QGroupBox QLineEdit:disabled,
+        QGroupBox QTextEdit:disabled {
+            background: #eef2f7;
+            color: #94a3b8;
         }
         QHeaderView::section {
             background: #eaf0f7;
