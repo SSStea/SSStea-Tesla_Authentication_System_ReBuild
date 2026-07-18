@@ -76,11 +76,11 @@ QString strType(AttackType typeAttack)
     switch (typeAttack)
     {
     case AttackType::Tamper:
-        return QStringLiteral("Message冲突副本");
+        return QStringLiteral("篡改");
     case AttackType::Replay:
-        return QStringLiteral("延迟重复报文");
+        return QStringLiteral("重放");
     case AttackType::Dos:
-        return QStringLiteral("高频无效流量");
+        return QStringLiteral("Dos");
     }
     return QStringLiteral("未知");
 }
@@ -335,9 +335,9 @@ QWidget* AttackTestMainWindow::pCreatePlanPage()
     QFormLayout* pLayout = new QFormLayout();
     m_pTypeCombo = new QComboBox(pPage);
     m_pTypeCombo->addItems({
-        QStringLiteral("Message冲突副本"),
-        QStringLiteral("延迟重复报文"),
-        QStringLiteral("高频无效流量")
+        QStringLiteral("篡改"),
+        QStringLiteral("重放"),
+        QStringLiteral("Dos")
     });
     m_pPacketIndexesEdit = new QLineEdit(QStringLiteral("1"), pPage);
     m_pPacketIndexesEdit->setPlaceholderText(QStringLiteral("例如：1,3-5"));

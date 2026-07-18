@@ -282,7 +282,7 @@ QString ManagerAttackExperimentController::strPlanSummary() const
             &detPlan.varPlanDetails()
         ))
     {
-        return QStringLiteral("Message冲突副本：%1个位置，字节%2，掩码0x%3，重复%4次")
+        return QStringLiteral("篡改：%1个位置，字节%2，掩码0x%3，重复%4次")
             .arg(pTamper->vecPacketIndexes().size())
             .arg(pTamper->u8MessageByteOffset())
             .arg(pTamper->u8XorMask(), 2, 16, QLatin1Char('0'))
@@ -292,7 +292,7 @@ QString ManagerAttackExperimentController::strPlanSummary() const
             &detPlan.varPlanDetails()
         ))
     {
-        return QStringLiteral("延迟重复报文：%1个位置，延迟%2ms，重复%3次")
+        return QStringLiteral("重放：%1个位置，延迟%2ms，重复%3次")
             .arg(pReplay->vecPacketIndexes().size())
             .arg(pReplay->u32ReplayDelayMilliseconds())
             .arg(pReplay->u32RepeatCount());
@@ -301,7 +301,7 @@ QString ManagerAttackExperimentController::strPlanSummary() const
     const DosAttackPlanDetails& detDos = std::get<DosAttackPlanDetails>(
         detPlan.varPlanDetails()
     );
-    return QStringLiteral("高频无效流量：%1 PPS，%2ms，%3B")
+    return QStringLiteral("Dos：%1 PPS，%2ms，%3B")
         .arg(detDos.u32RatePacketsPerSecond())
         .arg(detDos.u32DurationMilliseconds())
         .arg(detDos.u32PacketBytes());
