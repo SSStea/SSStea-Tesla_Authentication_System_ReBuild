@@ -228,6 +228,13 @@ NodeControlMessageType NodeControlMessage::typeMessage() const noexcept
         return NodeControlMessageType::RoundResult;
     }
 
+    if (std::holds_alternative<
+            AuthenticationRoundDrainAcknowledgementControlDetails
+        >(m_varDetails))
+    {
+        return NodeControlMessageType::RoundDrainAcknowledgement;
+    }
+
     if (std::holds_alternative<PacketObservationControlDetails>(m_varDetails))
     {
         return NodeControlMessageType::PacketObservationEvent;

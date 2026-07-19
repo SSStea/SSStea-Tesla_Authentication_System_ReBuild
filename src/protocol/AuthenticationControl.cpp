@@ -906,6 +906,34 @@ AuthenticationRoundResultControlDetails::strMessage() const noexcept
     return m_strMessage;
 }
 
+AuthenticationRoundDrainAcknowledgementControlDetails::
+AuthenticationRoundDrainAcknowledgementControlDetails(
+    std::string strRoundId,
+    std::string strNodeName
+)
+    : m_strRoundId(std::move(strRoundId)),
+      m_strNodeName(std::move(strNodeName))
+{
+    if (m_strRoundId.empty() || m_strNodeName.empty())
+    {
+        throw std::invalid_argument(
+            "Round drain acknowledgement fields must not be empty"
+        );
+    }
+}
+
+const std::string&
+AuthenticationRoundDrainAcknowledgementControlDetails::strRoundId() const noexcept
+{
+    return m_strRoundId;
+}
+
+const std::string&
+AuthenticationRoundDrainAcknowledgementControlDetails::strNodeName() const noexcept
+{
+    return m_strNodeName;
+}
+
 std::string AuthenticationControlValueCodec::strEncodeChainId(
     std::uint64_t u64ChainId
 )

@@ -475,6 +475,23 @@ private:
     std::string                     m_strMessage;
 };
 
+/** @brief NodeAgent确认本轮算法已结束且后台观测与指标队列均已排空。 */
+class AuthenticationRoundDrainAcknowledgementControlDetails final
+{
+public:
+    AuthenticationRoundDrainAcknowledgementControlDetails(
+        std::string strRoundId,
+        std::string strNodeName
+    );
+
+    const std::string& strRoundId() const noexcept;
+    const std::string& strNodeName() const noexcept;
+
+private:
+    std::string m_strRoundId;
+    std::string m_strNodeName;
+};
+
 /**
  * @brief 编解码认证控制消息中的固定长度十六进制值。
  *

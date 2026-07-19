@@ -58,6 +58,8 @@ const char* pTypeName(NodeControlMessageType typeMessage)
         return "ROUND_COMMAND_ACK";
     case NodeControlMessageType::RoundResult:
         return "ROUND_RESULT";
+    case NodeControlMessageType::RoundDrainAcknowledgement:
+        return "ROUND_DRAIN_ACK";
     case NodeControlMessageType::PacketObservationEvent:
         return "PACKET_OBSERVATION_EVENT";
     case NodeControlMessageType::PacketFailureEvent:
@@ -1944,6 +1946,16 @@ std::string NodeControlJsonCodec::strEncode(const NodeControlMessage& msgMessage
         jsnMessage["message"] = detResult.strMessage();
     }
     else if (msgMessage.typeMessage()
+        == NodeControlMessageType::RoundDrainAcknowledgement)
+    {
+        const AuthenticationRoundDrainAcknowledgementControlDetails& detAck =
+            std::get<AuthenticationRoundDrainAcknowledgementControlDetails>(
+                msgMessage.varDetails()
+            );
+        jsnMessage["roundId"] = detAck.strRoundId();
+        jsnMessage["nodeName"] = detAck.strNodeName();
+    }
+    else if (msgMessage.typeMessage()
         == NodeControlMessageType::PacketObservationEvent)
     {
         const PacketObservationControlDetails& detPacket = std::get<
@@ -2378,6 +2390,16 @@ NodeControlDecodeResult NodeControlJsonCodec::resDecode(const std::string& strJs
                 varDecodeResultDetails(jsnMessage.at("payloadDetails")),
                 jsnMessage.at("message").get<std::string>()
             ));
+        }
+
+        if (strType == "ROUND_DRAIN_ACK")
+        {
+            return NodeControlMessage(
+                AuthenticationRoundDrainAcknowledgementControlDetails(
+                    jsnMessage.at("roundId").get<std::string>(),
+                    jsnMessage.at("nodeName").get<std::string>()
+                )
+            );
         }
 
         if (strType == "PACKET_OBSERVATION_EVENT")
