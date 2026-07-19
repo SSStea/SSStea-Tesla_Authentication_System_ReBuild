@@ -199,6 +199,7 @@ private:
             const tesla::core::AuthenticationRoundParameters& prmParameters
         ) const;
     QString strCreateRequestId(const QString& strPrefix) const;
+    void completeRoundIfReady();
     void resetPreparedRound();
 
     ManagerNetworkController& m_ctlNetwork;
@@ -209,6 +210,7 @@ private:
     QSet<QString> m_setPendingConfigurationRequests;
     QSet<QString> m_setPendingFaultRequests;
     QSet<QString> m_setReceivedResultKeys;
+    QSet<QString> m_setDrainedEndpoints;
     bool m_bConfigurationRejected;
     bool m_bConfigurationReady;
     bool m_bFaultConfigured;

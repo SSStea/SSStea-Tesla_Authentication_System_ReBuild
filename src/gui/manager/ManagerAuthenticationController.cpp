@@ -1331,17 +1331,36 @@ void ManagerAuthenticationController::processNodeControlJson(
             .arg(strPayloadStatus)
             .arg(QString::fromStdString(detResult.strMessage())));
 
-        if (m_bRoundRunning
-            && m_setReceivedResultKeys.size()
-                >= static_cast<qsizetype>(m_nExpectedResultCount))
+        if (m_setReceivedResultKeys.size()
+            >= static_cast<qsizetype>(m_nExpectedResultCount))
         {
-            m_bRoundRunning = false;
-            m_bRoundPaused = false;
-            emit roundStateChanged(false, false);
             emit resultMessage(QStringLiteral(
-                "本轮所有Sender与Receiver结果均已返回"
+                "本轮所有Sender与Receiver结果均已返回，等待参与节点排空后台队列"
             ));
         }
+        completeRoundIfReady();
+        return;
+    }
+
+    if (msgMessage.typeMessage()
+        == NodeControlMessageType::RoundDrainAcknowledgement)
+    {
+        const AuthenticationRoundDrainAcknowledgementControlDetails& detAck =
+            std::get<AuthenticationRoundDrainAcknowledgementControlDetails>(
+                msgMessage.varDetails()
+            );
+        if (QString::fromStdString(detAck.strRoundId()) != m_strRoundId
+            || !m_setParticipantEndpoints.contains(strEndpointKey))
+        {
+            return;
+        }
+
+        m_setDrainedEndpoints.insert(strEndpointKey);
+        emit resultMessage(QStringLiteral("节点 %1 后台队列已排空（%2/%3）")
+            .arg(QString::fromStdString(detAck.strNodeName()))
+            .arg(m_setDrainedEndpoints.size())
+            .arg(m_setParticipantEndpoints.size()));
+        completeRoundIfReady();
     }
 }
 
@@ -1505,6 +1524,24 @@ QString ManagerAuthenticationController::strCreateRequestId(
         + QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
 
+void ManagerAuthenticationController::completeRoundIfReady()
+{
+    if (!m_bRoundRunning
+        || m_setReceivedResultKeys.size()
+            < static_cast<qsizetype>(m_nExpectedResultCount)
+        || m_setDrainedEndpoints.size() < m_setParticipantEndpoints.size())
+    {
+        return;
+    }
+
+    m_bRoundRunning = false;
+    m_bRoundPaused = false;
+    emit roundStateChanged(false, false);
+    emit resultMessage(QStringLiteral(
+        "本轮结果及全部参与节点后台队列均已确认，允许准备下一轮"
+    ));
+}
+
 void ManagerAuthenticationController::resetPreparedRound()
 {
     m_vecSenderTargets.clear();
@@ -1512,6 +1549,7 @@ void ManagerAuthenticationController::resetPreparedRound()
     m_setPendingConfigurationRequests.clear();
     m_setPendingFaultRequests.clear();
     m_setReceivedResultKeys.clear();
+    m_setDrainedEndpoints.clear();
     m_bConfigurationRejected = false;
     m_bConfigurationReady = false;
     m_bFaultConfigured = false;
