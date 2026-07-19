@@ -402,7 +402,7 @@ QWidget* ManagerMainWindow::pCreateConfigurationPage()
     });
     m_pIntervalSpin = new QSpinBox(pParameterGroup);
     m_pIntervalSpin->setRange(1, 60000);
-    m_pIntervalSpin->setValue(100);
+    m_pIntervalSpin->setValue(200);
     m_pPacketsSpin = new QSpinBox(pParameterGroup);
     m_pPacketsSpin->setRange(1, 10000);
     m_pPacketsSpin->setValue(100);
@@ -957,6 +957,7 @@ void ManagerMainWindow::validateAuthenticationInputs()
 
     const bool bImproved = m_pModeCombo->currentIndex() == 1;
     const bool bFileMode = m_pPayloadCombo->currentIndex() == 1;
+    const int nIntervalMilliseconds = m_pIntervalSpin->value();
     const int nPacketsPerInterval = m_pPacketsSpin->value();
     const int nGroupSize = m_pGroupSpin->value();
     const int nDetectionThreshold = m_pThresholdSpin->value();
@@ -970,8 +971,18 @@ void ManagerMainWindow::validateAuthenticationInputs()
     refreshSelectedFileInformation();
 
     QStringList listErrors;
+    const int nMinimumIntervalMilliseconds = nPacketsPerInterval * 2;
+    const bool bIntervalValid =
+        nIntervalMilliseconds >= nMinimumIntervalMilliseconds;
     bool bPacketGroupingValid = true;
     bool bThresholdValid = true;
+    if (!bIntervalValid)
+    {
+        listErrors.append(
+            QStringLiteral("时间间隔至少为每间隔发包数的两倍；当前最少需要%1ms")
+                .arg(nMinimumIntervalMilliseconds)
+        );
+    }
     if (bImproved && nPacketsPerInterval % nGroupSize != 0)
     {
         bPacketGroupingValid = false;
@@ -1046,7 +1057,11 @@ void ManagerMainWindow::validateAuthenticationInputs()
                 : QString()
         );
     };
-    fnSetInvalid(m_pPacketsSpin, !bPacketGroupingValid);
+    fnSetInvalid(m_pIntervalSpin, !bIntervalValid);
+    fnSetInvalid(
+        m_pPacketsSpin,
+        !bIntervalValid || !bPacketGroupingValid
+    );
     fnSetInvalid(m_pGroupSpin, !bPacketGroupingValid);
     fnSetInvalid(m_pThresholdSpin, !bThresholdValid);
     fnSetInvalid(m_pTextEdit, !bTextValid);
