@@ -19,7 +19,7 @@ public:
         std::uint16_t u16ManagementPort = 38020,
         std::string strMulticastAddress = "239.10.10.10",
         std::uint16_t u16MulticastPort = 39020,
-        std::string strBroadcastAddress = "192.168.19.1",
+        std::string strBroadcastAddress = "255.255.255.255",
         std::chrono::milliseconds durHeartbeatInterval = std::chrono::milliseconds(1000)
     )
         : m_strNodeName(std::move(strNodeName)),

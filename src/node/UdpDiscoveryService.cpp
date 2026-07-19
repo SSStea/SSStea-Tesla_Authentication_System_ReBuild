@@ -201,10 +201,13 @@ void UdpDiscoveryService::workerLoop()
 
         if (std::chrono::steady_clock::now() >= tpNextHeartbeat)
         {
+            const std::string& strHeartbeatTarget = m_strManagerAddress.empty()
+                ? m_strBroadcastAddress
+                : m_strManagerAddress;
             bSendPresence(
                 protocol::NodeDiscoveryMessageType::Heartbeat,
                 "",
-                m_strBroadcastAddress,
+                strHeartbeatTarget,
                 m_u16DiscoveryPort
             );
             tpNextHeartbeat = std::chrono::steady_clock::now() + m_durHeartbeatInterval;
@@ -235,6 +238,7 @@ void UdpDiscoveryService::handleDatagram(
     const std::string& strRequestId = std::get<protocol::DiscoveryRequestDetails>(
         msgMessage.varDetails()
     ).strRequestId();
+    m_strManagerAddress = strSourceAddress;
     bSendPresence(
         protocol::NodeDiscoveryMessageType::NodeAnnouncement,
         strRequestId,

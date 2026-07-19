@@ -53,6 +53,7 @@ private:
     std::string               m_strBindAddress;
     std::uint16_t             m_u16DiscoveryPort;
     std::string               m_strBroadcastAddress;
+    std::string               m_strManagerAddress;
     std::string               m_strNodeName;
     std::uint16_t             m_u16ManagementPort;
     std::chrono::milliseconds m_durHeartbeatInterval;
