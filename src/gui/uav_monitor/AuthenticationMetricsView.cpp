@@ -121,13 +121,8 @@ AuthenticationMetricsView::AuthenticationMetricsView(QWidget* pParent)
       m_pEnergySummary(nullptr),
       m_pNativeVerifySeries(new QLineSeries()),
       m_pFastVerifySeries(new QLineSeries()),
-      m_pFallbackVerifySeries(new QLineSeries()),
-      m_pIncompleteVerifySeries(new QLineSeries()),
       m_pNativeEnergySeries(new QLineSeries()),
       m_pFastEnergySeries(new QLineSeries()),
-      m_pFallbackEnergySeries(new QLineSeries()),
-      m_pIncompleteEnergySeries(new QLineSeries()),
-      m_pIneligibleEnergySeries(new QLineSeries()),
       m_pComputationXAxis(new QValueAxis()),
       m_pComputationYAxis(new QValueAxis()),
       m_pEnergyXAxis(new QValueAxis()),
@@ -138,32 +133,28 @@ AuthenticationMetricsView::AuthenticationMetricsView(QWidget* pParent)
         pParent,
         QStringLiteral("计算开销"),
         QStringLiteral(
-            "TESLA每个点是一包验证；S-TESLA每个点是一组完整验证。"
-            "耗时不包含披露等待、GUI刷新、日志和文件Hash。"
+            "每个点表示一轮正常认证的累计验证耗时；"
+            "TESLA与S-TESLA分别从第一轮开始计数。"
         ),
         m_pComputationSummary,
         m_pHardwareSummary,
         pComputationChart
     );
-    configureSeries(m_pNativeVerifySeries, QStringLiteral("NATIVE_PACKET_VERIFY"));
-    configureSeries(m_pFastVerifySeries, QStringLiteral("FAST_GROUP_PASS"));
-    configureSeries(m_pFallbackVerifySeries, QStringLiteral("KS_RS_FALLBACK"));
-    configureSeries(m_pIncompleteVerifySeries, QStringLiteral("INCOMPLETE_GROUP_TAGS"));
+    configureSeries(m_pNativeVerifySeries, QStringLiteral("TESLA"));
+    configureSeries(m_pFastVerifySeries, QStringLiteral("S-TESLA"));
     pComputationChart->addAxis(m_pComputationXAxis, Qt::AlignBottom);
     pComputationChart->addAxis(m_pComputationYAxis, Qt::AlignLeft);
     for (QLineSeries* pSeries : {
             m_pNativeVerifySeries,
-            m_pFastVerifySeries,
-            m_pFallbackVerifySeries,
-            m_pIncompleteVerifySeries
+            m_pFastVerifySeries
         })
     {
         pComputationChart->addSeries(pSeries);
         pSeries->attachAxis(m_pComputationXAxis);
         pSeries->attachAxis(m_pComputationYAxis);
     }
-    m_pComputationXAxis->setTitleText(QStringLiteral("验证采样序号"));
-    m_pComputationYAxis->setTitleText(QStringLiteral("验证耗时 (μs)"));
+    m_pComputationXAxis->setTitleText(QStringLiteral("模式内认证轮次"));
+    m_pComputationYAxis->setTitleText(QStringLiteral("本轮累计验证耗时 (μs)"));
     m_pComputationXAxis->setLabelFormat(QStringLiteral("%.0f"));
 
     QChart* pEnergyChart = nullptr;
@@ -172,34 +163,30 @@ AuthenticationMetricsView::AuthenticationMetricsView(QWidget* pParent)
         pParent,
         QStringLiteral("估算验证能耗"),
         QStringLiteral(
-            "固定模型：0.181 μJ/μs × 实际验证耗时 + "
-            "0.038504 μJ/B × 实际接收算法字段。以下结果不是功率计实测。"
+            "每个点表示一轮正常认证的估算能耗；"
+            "TESLA与S-TESLA分别从第一轮开始计数。"
         ),
         m_pEnergySummary,
         pEnergyModel,
         pEnergyChart
     );
-    pEnergyModel->setText(QStringLiteral("明确口径：估算能耗，非电池实际消耗"));
+    pEnergyModel->setText(QStringLiteral(
+        "固定模型：0.181 μJ/μs × 验证耗时 + 0.038504 μJ/B × 认证字段字节数"
+    ));
     configureSeries(m_pNativeEnergySeries, QStringLiteral("TESLA"));
-    configureSeries(m_pFastEnergySeries, QStringLiteral("S-TESLA FAST_GROUP_PASS"));
-    configureSeries(m_pFallbackEnergySeries, QStringLiteral("S-TESLA KS_RS_FALLBACK"));
-    configureSeries(m_pIncompleteEnergySeries, QStringLiteral("S-TESLA INCOMPLETE_GROUP_TAGS"));
-    configureSeries(m_pIneligibleEnergySeries, QStringLiteral("其他异常/未完成（不可比）"));
+    configureSeries(m_pFastEnergySeries, QStringLiteral("S-TESLA"));
     pEnergyChart->addAxis(m_pEnergyXAxis, Qt::AlignBottom);
     pEnergyChart->addAxis(m_pEnergyYAxis, Qt::AlignLeft);
     for (QLineSeries* pSeries : {
             m_pNativeEnergySeries,
-            m_pFastEnergySeries,
-            m_pFallbackEnergySeries,
-            m_pIncompleteEnergySeries,
-            m_pIneligibleEnergySeries
+            m_pFastEnergySeries
         })
     {
         pEnergyChart->addSeries(pSeries);
         pSeries->attachAxis(m_pEnergyXAxis);
         pSeries->attachAxis(m_pEnergyYAxis);
     }
-    m_pEnergyXAxis->setTitleText(QStringLiteral("完整验证轮次"));
+    m_pEnergyXAxis->setTitleText(QStringLiteral("模式内认证轮次"));
     m_pEnergyYAxis->setTitleText(QStringLiteral("估算能耗 (mJ)"));
     m_pEnergyXAxis->setLabelFormat(QStringLiteral("%.0f"));
 
@@ -264,213 +251,163 @@ void AuthenticationMetricsView::setRecords(
     for (QLineSeries* pSeries : {
             m_pNativeVerifySeries,
             m_pFastVerifySeries,
-            m_pFallbackVerifySeries,
-            m_pIncompleteVerifySeries,
             m_pNativeEnergySeries,
-            m_pFastEnergySeries,
-            m_pFallbackEnergySeries,
-            m_pIncompleteEnergySeries,
-            m_pIneligibleEnergySeries
+            m_pFastEnergySeries
         })
     {
         pSeries->clear();
     }
 
-    const std::size_t nVerificationCount = static_cast<std::size_t>(std::count_if(
-        vecRecords.begin(),
-        vecRecords.end(),
-        [](const AuthenticationMetricRecord& varRecord)
-        {
-            return std::holds_alternative<VerificationMetricSample>(varRecord);
-        }
-    ));
-    const std::size_t nEnergyCount = static_cast<std::size_t>(std::count_if(
-        vecRecords.begin(),
-        vecRecords.end(),
-        [](const AuthenticationMetricRecord& varRecord)
-        {
-            return std::holds_alternative<EstimatedEnergyMetricSummary>(varRecord);
-        }
-    ));
-    const std::size_t nVerificationSkip = nVerificationCount > MAX_CHART_POINT_COUNT
-        ? nVerificationCount - MAX_CHART_POINT_COUNT
+    const auto fnEligibleRoundCount = [&vecRecords](
+        AuthenticationMetricMode modeAuthentication
+    )
+    {
+        return static_cast<std::size_t>(std::count_if(
+            vecRecords.begin(),
+            vecRecords.end(),
+            [modeAuthentication](const AuthenticationMetricRecord& varRecord)
+            {
+                const auto* pEnergy = std::get_if<EstimatedEnergyMetricSummary>(
+                    &varRecord
+                );
+                return pEnergy != nullptr
+                    && pEnergy->bNormalComparisonEligible()
+                    && pEnergy->modeAuthentication() == modeAuthentication;
+            }
+        ));
+    };
+
+    const std::size_t nNativeRoundCount = fnEligibleRoundCount(
+        AuthenticationMetricMode::Native
+    );
+    const std::size_t nImprovedRoundCount = fnEligibleRoundCount(
+        AuthenticationMetricMode::Improved
+    );
+    const std::size_t nNativeRoundSkip = nNativeRoundCount > MAX_CHART_POINT_COUNT
+        ? nNativeRoundCount - MAX_CHART_POINT_COUNT
         : 0;
-    const std::size_t nEnergySkip = nEnergyCount > MAX_CHART_POINT_COUNT
-        ? nEnergyCount - MAX_CHART_POINT_COUNT
+    const std::size_t nImprovedRoundSkip =
+        nImprovedRoundCount > MAX_CHART_POINT_COUNT
+        ? nImprovedRoundCount - MAX_CHART_POINT_COUNT
         : 0;
 
-    std::size_t nVerificationSeen = 0;
-    std::size_t nEnergySeen = 0;
-    qreal dVerificationX = 0.0;
-    qreal dEnergyX = 0.0;
+    std::size_t nNativeRoundSeen = 0;
+    std::size_t nImprovedRoundSeen = 0;
+    qreal dNativeRoundX = 0.0;
+    qreal dImprovedRoundX = 0.0;
     qreal dMaximumVerifyTime = 0.0;
     qreal dMaximumEnergy = 0.0;
-    const VerificationMetricSample* pLatestSample = nullptr;
-    const EstimatedEnergyMetricSummary* pLatestEnergy = nullptr;
+    const EstimatedEnergyMetricSummary* pLatestRound = nullptr;
 
     for (const AuthenticationMetricRecord& varRecord : vecRecords)
     {
-        if (const auto* pSample = std::get_if<VerificationMetricSample>(
-                &varRecord
-            ))
-        {
-            ++nVerificationSeen;
-            if (nVerificationSeen <= nVerificationSkip)
-            {
-                continue;
-            }
-
-            ++dVerificationX;
-            const qreal dVerifyTimeMicroseconds = static_cast<qreal>(
-                pSample->mstPerformance().u64DurationNanoseconds()
-            ) / 1000.0;
-            QLineSeries* pTargetSeries = m_pNativeVerifySeries;
-            switch (pSample->pathVerification())
-            {
-            case VerificationMetricPath::NativePacketVerify:
-                pTargetSeries = m_pNativeVerifySeries;
-                break;
-            case VerificationMetricPath::FastGroupPass:
-                pTargetSeries = m_pFastVerifySeries;
-                break;
-            case VerificationMetricPath::KsRsFallback:
-                pTargetSeries = m_pFallbackVerifySeries;
-                break;
-            case VerificationMetricPath::IncompleteGroupTags:
-                pTargetSeries = m_pIncompleteVerifySeries;
-                break;
-            }
-            pTargetSeries->append(dVerificationX, dVerifyTimeMicroseconds);
-            dMaximumVerifyTime = std::max(dMaximumVerifyTime, dVerifyTimeMicroseconds);
-            pLatestSample = pSample;
-            continue;
-        }
-
         const auto* pEnergy = std::get_if<EstimatedEnergyMetricSummary>(
             &varRecord
         );
-        if (pEnergy == nullptr)
+        if (pEnergy == nullptr || !pEnergy->bNormalComparisonEligible())
         {
             continue;
         }
 
-        ++nEnergySeen;
-        if (nEnergySeen <= nEnergySkip)
+        const bool bNative = pEnergy->modeAuthentication()
+            == AuthenticationMetricMode::Native;
+        std::size_t& nRoundSeen = bNative
+            ? nNativeRoundSeen
+            : nImprovedRoundSeen;
+        const std::size_t nRoundSkip = bNative
+            ? nNativeRoundSkip
+            : nImprovedRoundSkip;
+        ++nRoundSeen;
+        if (nRoundSeen <= nRoundSkip)
         {
             continue;
         }
 
-        ++dEnergyX;
-        const qreal dEnergyMilliJoule = pEnergy->dEstimatedEnergyMilliJoule();
-        QLineSeries* pTargetSeries = pEnergy->bNormalComparisonEligible()
+        qreal& dRoundX = bNative ? dNativeRoundX : dImprovedRoundX;
+        QLineSeries* pVerifySeries = bNative
+            ? m_pNativeVerifySeries
+            : m_pFastVerifySeries;
+        QLineSeries* pEnergySeries = bNative
             ? m_pNativeEnergySeries
-            : m_pIneligibleEnergySeries;
-        if (const auto* pImproved = std::get_if<ImprovedRoundMetricDetails>(
-                &pEnergy->varDetails()
-            ))
-        {
-            if (pImproved->u32IncompleteGroupCount() > 0)
-            {
-                pTargetSeries = m_pIncompleteEnergySeries;
-            }
-            else if (pImproved->u32FallbackGroupCount() > 0)
-            {
-                pTargetSeries = m_pFallbackEnergySeries;
-            }
-            else if (pEnergy->bNormalComparisonEligible())
-            {
-                pTargetSeries = m_pFastEnergySeries;
-            }
-        }
-        pTargetSeries->append(dEnergyX, dEnergyMilliJoule);
+            : m_pFastEnergySeries;
+
+        ++dRoundX;
+        const qreal dVerifyTimeMicroseconds = static_cast<qreal>(
+            pEnergy->u64VerifyTimeNanoseconds()
+        ) / 1000.0;
+        const qreal dEnergyMilliJoule = pEnergy->dEstimatedEnergyMilliJoule();
+
+        pVerifySeries->append(dRoundX, dVerifyTimeMicroseconds);
+        pEnergySeries->append(dRoundX, dEnergyMilliJoule);
+        dMaximumVerifyTime = std::max(
+            dMaximumVerifyTime,
+            dVerifyTimeMicroseconds
+        );
         dMaximumEnergy = std::max(dMaximumEnergy, dEnergyMilliJoule);
-        pLatestEnergy = pEnergy;
+        pLatestRound = pEnergy;
     }
 
-    if (pLatestSample == nullptr)
+    if (pLatestRound == nullptr)
     {
-        m_pComputationSummary->setText(QStringLiteral("尚无真实认证指标"));
-        m_pHardwareSummary->setText(QStringLiteral("Cache指标：等待设备采样"));
+        m_pComputationSummary->setText(QStringLiteral("尚无正常认证轮次"));
+        m_pHardwareSummary->setText(QStringLiteral(
+            "逐次硬件计数保留在原始指标导出记录中"
+        ));
+        m_pEnergySummary->setText(QStringLiteral("尚无正常轮次估算能耗"));
     }
     else
     {
+        const QString strMode = pLatestRound->modeAuthentication()
+            == AuthenticationMetricMode::Native
+            ? QStringLiteral("TESLA")
+            : QStringLiteral("S-TESLA");
+        const double dVerifyTimeMicroseconds = static_cast<double>(
+            pLatestRound->u64VerifyTimeNanoseconds()
+        ) / 1000.0;
+        const double dAveragePacketVerifyTimeMicroseconds =
+            dVerifyTimeMicroseconds
+            / static_cast<double>(pLatestRound->u32PacketCount());
+
         m_pComputationSummary->setText(
-            QStringLiteral("最新验证耗时：%1 μs；平均每包：%2 μs")
+            QStringLiteral("最新正常%1轮次：累计验证耗时=%2 μs；平均每包=%3 μs")
+                .arg(strMode)
+                .arg(dVerifyTimeMicroseconds, 0, 'f', 3)
                 .arg(
-                    static_cast<double>(
-                        pLatestSample->mstPerformance().u64DurationNanoseconds()
-                    ) / 1000.0,
-                    0,
-                    'f',
-                    3
-                )
-                .arg(
-                    pLatestSample->dAveragePacketVerifyTimeMicroseconds(),
+                    dAveragePacketVerifyTimeMicroseconds,
                     0,
                     'f',
                     3
                 )
         );
-        const HardwarePerformanceCounters& ctrHardware =
-            pLatestSample->mstPerformance().ctrHardware();
-        if (ctrHardware.statusCounters() == HardwareCounterStatus::Supported)
-        {
-            m_pHardwareSummary->setText(
-                QStringLiteral(
-                    "CPU cycles=%1；Cache References=%2；Cache Misses=%3；"
-                    "命中率=%4%"
-                )
-                    .arg(ctrHardware.u64CpuCycles())
-                    .arg(ctrHardware.u64CacheReferences())
-                    .arg(ctrHardware.u64CacheMisses())
-                    .arg(ctrHardware.dCacheHitRate() * 100.0, 0, 'f', 2)
-            );
-        }
-        else
-        {
-            m_pHardwareSummary->setText(
-                QStringLiteral("Cache指标：%1；验证耗时仍为真实采样")
-                    .arg(strHardwareStatus(ctrHardware.statusCounters()))
-            );
-        }
-    }
-
-    if (pLatestEnergy == nullptr)
-    {
-        m_pEnergySummary->setText(QStringLiteral("尚无完整轮次估算能耗"));
-    }
-    else
-    {
+        m_pHardwareSummary->setText(QStringLiteral(
+            "逐次硬件计数保留在原始指标导出记录中；图表按轮次汇总"
+        ));
         m_pEnergySummary->setText(
             QStringLiteral(
-                "最新估算能耗：%1 mJ；平均每包：%2 μJ；"
-                "验证耗时=%3 μs；接收算法字段=%4B；正常对比=%5"
+                "最新正常%1轮次：估算能耗=%2 mJ；平均每包=%3 μJ；"
+                "验证耗时=%4 μs；接收算法字段=%5B"
             )
-                .arg(pLatestEnergy->dEstimatedEnergyMilliJoule(), 0, 'f', 6)
-                .arg(pLatestEnergy->dAveragePacketEnergyMicroJoule(), 0, 'f', 6)
-                .arg(
-                    static_cast<double>(pLatestEnergy->u64VerifyTimeNanoseconds())
-                        / 1000.0,
-                    0,
-                    'f',
-                    3
-                )
-                .arg(pLatestEnergy->u64ReceivedAuthBytes())
-                .arg(
-                    pLatestEnergy->bNormalComparisonEligible()
-                        ? QStringLiteral("是")
-                        : QStringLiteral("否")
-                )
+                .arg(strMode)
+                .arg(pLatestRound->dEstimatedEnergyMilliJoule(), 0, 'f', 6)
+                .arg(pLatestRound->dAveragePacketEnergyMicroJoule(), 0, 'f', 6)
+                .arg(dVerifyTimeMicroseconds, 0, 'f', 3)
+                .arg(pLatestRound->u64ReceivedAuthBytes())
         );
     }
 
+    const qreal dMaximumRoundX = std::max(dNativeRoundX, dImprovedRoundX);
     updateAxes(
         m_pComputationXAxis,
         m_pComputationYAxis,
-        dVerificationX,
+        dMaximumRoundX,
         dMaximumVerifyTime
     );
-    updateAxes(m_pEnergyXAxis, m_pEnergyYAxis, dEnergyX, dMaximumEnergy);
+    updateAxes(
+        m_pEnergyXAxis,
+        m_pEnergyYAxis,
+        dMaximumRoundX,
+        dMaximumEnergy
+    );
 }
 
 void AuthenticationMetricsView::exportRecords(bool bJson) const

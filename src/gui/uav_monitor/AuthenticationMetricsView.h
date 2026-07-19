@@ -42,13 +42,8 @@ private:
     QLabel*      m_pEnergySummary;
     QLineSeries* m_pNativeVerifySeries;
     QLineSeries* m_pFastVerifySeries;
-    QLineSeries* m_pFallbackVerifySeries;
-    QLineSeries* m_pIncompleteVerifySeries;
     QLineSeries* m_pNativeEnergySeries;
     QLineSeries* m_pFastEnergySeries;
-    QLineSeries* m_pFallbackEnergySeries;
-    QLineSeries* m_pIncompleteEnergySeries;
-    QLineSeries* m_pIneligibleEnergySeries;
     QValueAxis*  m_pComputationXAxis;
     QValueAxis*  m_pComputationYAxis;
     QValueAxis*  m_pEnergyXAxis;
