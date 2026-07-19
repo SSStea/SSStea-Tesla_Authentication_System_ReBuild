@@ -6,6 +6,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
 
@@ -20,6 +21,46 @@ std::uint64_t u64NowMilliseconds()
             std::chrono::system_clock::now().time_since_epoch()
         ).count()
     );
+}
+
+const char* pRoundResultStatusName(
+    protocol::AuthenticationRoundResultStatus statusResult
+) noexcept
+{
+    switch (statusResult)
+    {
+    case protocol::AuthenticationRoundResultStatus::Completed:
+        return "COMPLETED";
+    case protocol::AuthenticationRoundResultStatus::AuthenticationFailed:
+        return "AUTHENTICATION_FAILED";
+    case protocol::AuthenticationRoundResultStatus::VerificationTimeout:
+        return "VERIFICATION_TIMEOUT";
+    case protocol::AuthenticationRoundResultStatus::InvalidSchedulingOverrun:
+        return "INVALID_SCHEDULING_OVERRUN";
+    case protocol::AuthenticationRoundResultStatus::Stopped:
+        return "STOPPED";
+    case protocol::AuthenticationRoundResultStatus::ProtocolIncomplete:
+        return "PROTOCOL_INCOMPLETE";
+    case protocol::AuthenticationRoundResultStatus::TimeUnsynchronized:
+        return "TIME_UNSYNCHRONIZED";
+    }
+
+    return "UNKNOWN";
+}
+
+void logSenderRoundResult(
+    const protocol::AuthenticationRoundResultControlDetails& detResult
+) noexcept
+{
+    const bool bCompleted = detResult.statusResult()
+        == protocol::AuthenticationRoundResultStatus::Completed;
+    std::cout
+        << "[AUTH_ROUND] roundId=" << detResult.strRoundId()
+        << " status=" << pRoundResultStatusName(detResult.statusResult())
+        << " sent=" << detResult.u32ReceivedPacketCount()
+        << " expected=" << detResult.u32ExpectedPacketCount()
+        << " error=" << (bCompleted ? "NONE" : detResult.strMessage())
+        << std::endl;
 }
 
 std::string strSafeFileComponent(const std::string& strValue)
@@ -183,6 +224,11 @@ NodeAgentService::NodeAgentService(
               const auto& detResult = std::get<
                   protocol::AuthenticationRoundResultControlDetails
               >(msgMessage.varDetails());
+              if (detResult.roleResult()
+                  == protocol::AuthenticationRoundResultRole::Sender)
+              {
+                  logSenderRoundResult(detResult);
+              }
               m_srvManagement.requestRoundDrainAcknowledgement(
                   detResult.strRoundId()
               );
