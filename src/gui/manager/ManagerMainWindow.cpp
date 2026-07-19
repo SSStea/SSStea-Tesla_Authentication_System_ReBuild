@@ -1355,6 +1355,9 @@ void ManagerMainWindow::prepareRound()
 
 void ManagerMainWindow::startRound()
 {
+    m_bPreparedConfigurationCurrent = false;
+    refreshAuthenticationActions();
+
     QString strError;
     const std::uint64_t u64StartTimestampMilliseconds =
         static_cast<std::uint64_t>(QDateTime::currentMSecsSinceEpoch()) + 2000U;
