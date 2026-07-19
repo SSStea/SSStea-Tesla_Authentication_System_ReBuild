@@ -266,9 +266,19 @@ ObservationStoreAppendResult AuthenticationObservationStore::resAppendPacket(
 
     while (m_deqPackets.size() > m_nPacketLimit)
     {
+        const std::uint64_t u64ExpiredEventId =
+            m_deqPackets.front()->u64EventId();
         m_deqPackets.pop_front();
+
+        const auto itExpiredPacket = m_mapPacketByEventId.find(
+            u64ExpiredEventId
+        );
+        if (itExpiredPacket != m_mapPacketByEventId.end()
+            && itExpiredPacket->second.expired())
+        {
+            m_mapPacketByEventId.erase(itExpiredPacket);
+        }
     }
-    removeExpiredPacketIndexEntries();
     return ObservationStoreAppendResult::Stored;
 }
 
