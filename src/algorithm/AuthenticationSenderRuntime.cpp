@@ -17,6 +17,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -34,6 +35,7 @@ using SteadyClock = std::chrono::steady_clock;
 using SystemClock = std::chrono::system_clock;
 
 constexpr std::uint32_t MAX_AUTHENTICATION_PACKET_COUNT = 200000;
+constexpr std::size_t MAX_PENDING_PACKET_OBSERVATIONS = 5000;
 constexpr std::chrono::microseconds DEFAULT_SEND_BUDGET(250);
 
 protocol::BinaryBlock arrMapDigest(const crypto::Digest& digValue)
@@ -124,6 +126,15 @@ public:
         std::uint32_t                     u32DataPacketCount = 0;
     };
 
+    struct PendingPacketObservation final
+    {
+        std::uint64_t               u64EventId = 0;
+        const protocol::ByteBuffer* pDatagram = nullptr;
+        bool                        bSent = false;
+        std::uint64_t               u64TimestampMilliseconds = 0;
+        std::string                 strReason;
+    };
+
     Impl(
         DatagramSender fnDatagramSender,
         ResultHandler fnResultHandler,
@@ -145,11 +156,29 @@ public:
                 "Sender runtime requires datagram and result callbacks"
             );
         }
+
+        if (m_fnObservationHandler)
+        {
+            m_thrObservation = std::thread([this]()
+            {
+                processPacketObservations();
+            });
+        }
     }
 
     ~Impl()
     {
         stop(false);
+
+        {
+            std::lock_guard<std::mutex> lckObservation(m_mtxObservation);
+            m_bObservationShutdown = true;
+        }
+        m_cndObservation.notify_all();
+        if (m_thrObservation.joinable())
+        {
+            m_thrObservation.join();
+        }
     }
 
     void configure(
@@ -836,6 +865,106 @@ private:
         return !m_bStopRequested;
     }
 
+    void enqueuePacketObservation(
+        const protocol::ByteBuffer& vecDatagram,
+        bool bSent,
+        std::uint64_t u64TimestampMilliseconds,
+        const std::string& strReason
+    ) noexcept
+    {
+        if (!m_fnObservationHandler)
+        {
+            return;
+        }
+
+        try
+        {
+            std::lock_guard<std::mutex> lckObservation(m_mtxObservation);
+            if (m_deqPendingPacketObservations.size()
+                >= MAX_PENDING_PACKET_OBSERVATIONS)
+            {
+                return;
+            }
+
+            m_deqPendingPacketObservations.push_back(
+                PendingPacketObservation{
+                    m_u64NextObservationEventId++,
+                    &vecDatagram,
+                    bSent,
+                    u64TimestampMilliseconds,
+                    strReason
+                }
+            );
+            m_cndObservation.notify_one();
+        }
+        catch (...)
+        {
+            // 观测排队失败不能改变真实UDP发送结果。
+        }
+    }
+
+    void processPacketObservations() noexcept
+    {
+        while (true)
+        {
+            PendingPacketObservation obsObservation;
+            {
+                std::unique_lock<std::mutex> lckObservation(m_mtxObservation);
+                m_cndObservation.wait(
+                    lckObservation,
+                    [this]()
+                    {
+                        return m_bObservationShutdown
+                            || !m_deqPendingPacketObservations.empty();
+                    }
+                );
+                if (m_bObservationShutdown
+                    && m_deqPendingPacketObservations.empty())
+                {
+                    return;
+                }
+
+                obsObservation = std::move(
+                    m_deqPendingPacketObservations.front()
+                );
+                m_deqPendingPacketObservations.pop_front();
+                m_bObservationBusy = true;
+            }
+
+            emitPacketObservation(
+                obsObservation.u64EventId,
+                *obsObservation.pDatagram,
+                obsObservation.bSent,
+                obsObservation.u64TimestampMilliseconds,
+                obsObservation.strReason
+            );
+
+            {
+                std::lock_guard<std::mutex> lckObservation(m_mtxObservation);
+                m_bObservationBusy = false;
+            }
+            m_cndObservation.notify_all();
+        }
+    }
+
+    void waitForPendingPacketObservations() noexcept
+    {
+        if (!m_thrObservation.joinable())
+        {
+            return;
+        }
+
+        std::unique_lock<std::mutex> lckObservation(m_mtxObservation);
+        m_cndObservation.wait(
+            lckObservation,
+            [this]()
+            {
+                return m_deqPendingPacketObservations.empty()
+                    && !m_bObservationBusy;
+            }
+        );
+    }
+
     void run()
     {
         if (!bWaitForWallTimestamp(m_u64StartTimestampMilliseconds))
@@ -912,7 +1041,7 @@ private:
 
                 if (decFault.dspDisposition() == DatagramFaultDisposition::Drop)
                 {
-                    emitPacketObservation(
+                    enqueuePacketObservation(
                         vecDatagram,
                         false,
                         u64NowMilliseconds(),
@@ -936,7 +1065,7 @@ private:
                 {
                     recordSentAuthenticationFields(vecDatagram);
                 }
-                emitPacketObservation(
+                enqueuePacketObservation(
                     vecDatagram,
                     bSent,
                     u64NowMilliseconds(),
@@ -1021,6 +1150,8 @@ private:
             }
         }
 
+        waitForPendingPacketObservations();
+
         if (bOverrun)
         {
             emitSchedulingFailure();
@@ -1058,6 +1189,7 @@ private:
     }
 
     void emitPacketObservation(
+        std::uint64_t u64EventId,
         const protocol::ByteBuffer& vecDatagram,
         bool bSent,
         std::uint64_t u64TimestampMilliseconds,
@@ -1107,7 +1239,6 @@ private:
                 ).u32IntervalIndex();
             }
 
-            const std::uint64_t u64EventId = m_u64NextObservationEventId++;
             m_fnObservationHandler(protocol::AuthenticationObservation(
                 protocol::PacketObservationControlDetails(
                     u64EventId,
@@ -1432,6 +1563,10 @@ private:
     mutable std::mutex              m_mtxState;
     std::condition_variable         m_cndState;
     std::thread                     m_thrWorker;
+    std::mutex                      m_mtxObservation;
+    std::condition_variable         m_cndObservation;
+    std::thread                     m_thrObservation;
+    std::deque<PendingPacketObservation> m_deqPendingPacketObservations;
     std::optional<SenderAuthenticationContext> m_optSenderContext;
     std::optional<SenderPayloadWorkload>        m_optPayloadWorkload;
     std::optional<protocol::AuthenticationFaultDetails> m_optFaultDetails;
@@ -1454,6 +1589,8 @@ private:
     bool                            m_bPaused = false;
     bool                            m_bStopRequested = false;
     bool                            m_bCommunicationMetricEmitted = false;
+    bool                            m_bObservationShutdown = false;
+    bool                            m_bObservationBusy = false;
     std::uint64_t                   m_u64NextObservationEventId = 1;
 };
 
