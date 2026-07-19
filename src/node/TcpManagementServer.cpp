@@ -34,6 +34,7 @@ constexpr std::size_t ABNORMAL_SNAPSHOT_BATCH_SIZE = 64;
 constexpr std::size_t MAX_METRIC_EVENT_QUEUE = 8192;
 constexpr std::size_t METRIC_BATCH_SIZE = 64;
 constexpr std::chrono::milliseconds METRIC_BATCH_WAIT(25);
+constexpr std::chrono::milliseconds ROUND_DRAIN_POLL_INTERVAL(25);
 
 void closeSocket(std::atomic<int>& nSocket) noexcept
 {
@@ -141,6 +142,7 @@ TcpManagementServer::TcpManagementServer(
     std::uint16_t u16Port,
     std::string strNodeName,
     RuntimeStateProvider fnStateProvider,
+    RoundStateProvider fnRoundStateProvider,
     ControlMessageHandler fnControlMessageHandler,
     FilePayloadHandler fnFilePayloadHandler,
     AbnormalSnapshotProvider fnAbnormalSnapshotProvider,
@@ -150,6 +152,7 @@ TcpManagementServer::TcpManagementServer(
       m_u16Port(u16Port),
       m_strNodeName(std::move(strNodeName)),
       m_fnStateProvider(std::move(fnStateProvider)),
+      m_fnRoundStateProvider(std::move(fnRoundStateProvider)),
       m_fnControlMessageHandler(std::move(fnControlMessageHandler)),
       m_fnFilePayloadHandler(std::move(fnFilePayloadHandler)),
       m_fnAbnormalSnapshotProvider(std::move(fnAbnormalSnapshotProvider)),
@@ -158,6 +161,13 @@ TcpManagementServer::TcpManagementServer(
     if (!m_fnStateProvider)
     {
         throw std::invalid_argument("TCP management server requires a state provider");
+    }
+
+    if (!m_fnRoundStateProvider)
+    {
+        throw std::invalid_argument(
+            "TCP management server requires a round state provider"
+        );
     }
 
     if (!m_fnControlMessageHandler)
@@ -237,6 +247,10 @@ void TcpManagementServer::start()
             &TcpManagementServer::monitorBroadcastLoop,
             this
         );
+        m_thrRoundDrain = std::thread(
+            &TcpManagementServer::roundDrainLoop,
+            this
+        );
     }
     catch (...)
     {
@@ -248,6 +262,7 @@ void TcpManagementServer::start()
 void TcpManagementServer::stop() noexcept
 {
     m_bRunning = false;
+    m_cndRoundDrain.notify_all();
     {
         std::lock_guard<std::mutex> lckQueue(m_mtxMonitorQueue);
         m_deqMonitorControlQueue.clear();
@@ -275,6 +290,11 @@ void TcpManagementServer::stop() noexcept
         m_thrMonitorBroadcast.join();
     }
 
+    if (m_thrRoundDrain.joinable())
+    {
+        m_thrRoundDrain.join();
+    }
+
     for (std::thread& thrClient : m_vecClientThreads)
     {
         if (thrClient.joinable())
@@ -291,6 +311,11 @@ void TcpManagementServer::stop() noexcept
         m_deqMonitorControlQueue.clear();
         m_deqMonitorQueue.clear();
         m_deqMetricQueue.clear();
+        m_bMonitorWriteBusy = false;
+    }
+    {
+        std::lock_guard<std::mutex> lckDrain(m_mtxRoundDrain);
+        m_optPendingRoundDrainId.reset();
     }
 }
 
@@ -408,6 +433,27 @@ void TcpManagementServer::enqueueMonitorMetric(
     }
 }
 
+void TcpManagementServer::requestRoundDrainAcknowledgement(
+    std::string strRoundId
+) noexcept
+{
+    if (strRoundId.empty())
+    {
+        return;
+    }
+
+    try
+    {
+        std::lock_guard<std::mutex> lckDrain(m_mtxRoundDrain);
+        m_optPendingRoundDrainId = std::move(strRoundId);
+        m_cndRoundDrain.notify_all();
+    }
+    catch (...)
+    {
+        // 排空确认只控制下一轮准入，不能影响当前认证结果上报。
+    }
+}
+
 void TcpManagementServer::monitorBroadcastLoop()
 {
     bool bPreferMetricBatch = true;
@@ -514,6 +560,7 @@ void TcpManagementServer::monitorBroadcastLoop()
                 optMessage = std::move(m_deqMonitorQueue.front());
                 m_deqMonitorQueue.pop_front();
             }
+            m_bMonitorWriteBusy = optMessage.has_value();
         }
 
         if (ptrTargetClient != nullptr)
@@ -521,6 +568,10 @@ void TcpManagementServer::monitorBroadcastLoop()
             if (!bWriteControlMessage(ptrTargetClient, optMessage.value()))
             {
                 closeSocket(ptrTargetClient->atmSocket());
+            }
+            {
+                std::lock_guard<std::mutex> lckQueue(m_mtxMonitorQueue);
+                m_bMonitorWriteBusy = false;
             }
             continue;
         }
@@ -543,6 +594,104 @@ void TcpManagementServer::monitorBroadcastLoop()
             {
                 closeSocket(ptrClient->atmSocket());
             }
+        }
+        {
+            std::lock_guard<std::mutex> lckQueue(m_mtxMonitorQueue);
+            m_bMonitorWriteBusy = false;
+        }
+    }
+}
+
+void TcpManagementServer::roundDrainLoop()
+{
+    while (m_bRunning.load())
+    {
+        std::string strRoundId;
+        {
+            std::unique_lock<std::mutex> lckDrain(m_mtxRoundDrain);
+            m_cndRoundDrain.wait(
+                lckDrain,
+                [this]()
+                {
+                    return !m_bRunning.load()
+                        || m_optPendingRoundDrainId.has_value();
+                }
+            );
+            if (!m_bRunning.load())
+            {
+                return;
+            }
+
+            strRoundId = m_optPendingRoundDrainId.value();
+        }
+
+        const std::pair<bool, bool> prRoundState = m_fnRoundStateProvider();
+        bool bTelemetryDrained = false;
+        {
+            std::lock_guard<std::mutex> lckQueue(m_mtxMonitorQueue);
+            bTelemetryDrained = m_deqMonitorControlQueue.empty()
+                && m_deqMonitorQueue.empty()
+                && m_deqMetricQueue.empty()
+                && !m_bMonitorWriteBusy;
+        }
+
+        if (prRoundState.first || prRoundState.second || !bTelemetryDrained)
+        {
+            std::unique_lock<std::mutex> lckDrain(m_mtxRoundDrain);
+            m_cndRoundDrain.wait_for(
+                lckDrain,
+                ROUND_DRAIN_POLL_INTERVAL
+            );
+            continue;
+        }
+
+        {
+            std::lock_guard<std::mutex> lckDrain(m_mtxRoundDrain);
+            if (!m_optPendingRoundDrainId.has_value()
+                || m_optPendingRoundDrainId.value() != strRoundId)
+            {
+                continue;
+            }
+            m_optPendingRoundDrainId.reset();
+        }
+
+        try
+        {
+            broadcastManagerControlMessage(protocol::NodeControlMessage(
+                protocol::AuthenticationRoundDrainAcknowledgementControlDetails(
+                    strRoundId,
+                    m_strNodeName
+                )
+            ));
+        }
+        catch (...)
+        {
+            // 排空消息构造或发送失败不会终止NodeAgent服务线程。
+        }
+    }
+}
+
+void TcpManagementServer::broadcastManagerControlMessage(
+    const protocol::NodeControlMessage& msgMessage
+) const noexcept
+{
+    std::vector<std::shared_ptr<ClientConnection>> vecClients;
+    {
+        std::lock_guard<std::mutex> lckClients(m_mtxClients);
+        vecClients = m_vecClients;
+    }
+
+    for (const std::shared_ptr<ClientConnection>& ptrClient : vecClients)
+    {
+        if (!ptrClient->bHelloReceived()
+            || ptrClient->roleClient() != protocol::TcpClientRole::Manager)
+        {
+            continue;
+        }
+
+        if (!bWriteControlMessage(ptrClient, msgMessage))
+        {
+            closeSocket(ptrClient->atmSocket());
         }
     }
 }

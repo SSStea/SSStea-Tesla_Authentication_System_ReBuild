@@ -122,6 +122,13 @@ NodeAgentService::NodeAgentService(
                   m_bReceiverRunning.load()
               );
           },
+          [this]()
+          {
+              return std::make_pair(
+                  m_runAuthentication.bSenderRunning(),
+                  m_runAuthentication.bReceiverRoundRunning()
+              );
+          },
           [this](
               protocol::TcpClientRole roleClient,
               const protocol::NodeControlMessage& msgMessage
@@ -167,6 +174,18 @@ NodeAgentService::NodeAgentService(
           [this](const protocol::NodeControlMessage& msgMessage)
           {
               m_srvManagement.broadcastControlMessage(msgMessage);
+              if (msgMessage.typeMessage()
+                  != protocol::NodeControlMessageType::RoundResult)
+              {
+                  return;
+              }
+
+              const auto& detResult = std::get<
+                  protocol::AuthenticationRoundResultControlDetails
+              >(msgMessage.varDetails());
+              m_srvManagement.requestRoundDrainAcknowledgement(
+                  detResult.strRoundId()
+              );
           },
           fnTimeSynchronizationProvider
               ? std::move(fnTimeSynchronizationProvider)

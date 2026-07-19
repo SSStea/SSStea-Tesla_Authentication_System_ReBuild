@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -23,6 +24,7 @@ class TcpManagementServer final
 {
 public:
     using RuntimeStateProvider = std::function<std::pair<bool, bool>()>;
+    using RoundStateProvider = std::function<std::pair<bool, bool>()>;
     using ControlMessageHandler = std::function<protocol::NodeControlMessage(
         protocol::TcpClientRole,
         const protocol::NodeControlMessage&
@@ -47,6 +49,7 @@ public:
         std::uint16_t u16Port,
         std::string strNodeName,
         RuntimeStateProvider fnStateProvider,
+        RoundStateProvider fnRoundStateProvider,
         ControlMessageHandler fnControlMessageHandler,
         FilePayloadHandler fnFilePayloadHandler,
         AbnormalSnapshotProvider fnAbnormalSnapshotProvider,
@@ -72,6 +75,8 @@ public:
     void enqueueMonitorMetric(
         const metrics::AuthenticationMetricRecord& varMetric
     ) noexcept;
+    /** @brief 等待本轮算法与全部后台遥测写出后向Manager发送排空确认。 */
+    void requestRoundDrainAcknowledgement(std::string strRoundId) noexcept;
 
 private:
     struct ClientConnection;
@@ -79,6 +84,10 @@ private:
     void acceptLoop();
     void clientLoop(const std::shared_ptr<ClientConnection>& ptrClient);
     void monitorBroadcastLoop();
+    void roundDrainLoop();
+    void broadcastManagerControlMessage(
+        const protocol::NodeControlMessage& msgMessage
+    ) const noexcept;
     bool bHandleFrame(
         const std::shared_ptr<ClientConnection>& ptrClient,
         bool& bHelloReceived,
@@ -98,6 +107,7 @@ private:
     std::uint16_t                    m_u16Port;
     std::string                      m_strNodeName;
     RuntimeStateProvider             m_fnStateProvider;
+    RoundStateProvider               m_fnRoundStateProvider;
     ControlMessageHandler            m_fnControlMessageHandler;
     FilePayloadHandler               m_fnFilePayloadHandler;
     AbnormalSnapshotProvider         m_fnAbnormalSnapshotProvider;
@@ -106,6 +116,7 @@ private:
     std::atomic<int>                 m_nListenSocket{-1};
     std::thread                      m_thrAccept;
     std::thread                      m_thrMonitorBroadcast;
+    std::thread                      m_thrRoundDrain;
     mutable std::mutex               m_mtxClients;
     std::vector<std::shared_ptr<ClientConnection>> m_vecClients;
     std::vector<std::thread>         m_vecClientThreads;
@@ -118,5 +129,9 @@ private:
     std::deque<protocol::NodeControlMessage> m_deqMonitorQueue;
     std::deque<metrics::AuthenticationMetricRecord> m_deqMetricQueue;
     std::atomic<std::size_t>         m_nDroppedMonitorEventCount{0};
+    bool                             m_bMonitorWriteBusy{false};
+    std::mutex                       m_mtxRoundDrain;
+    std::condition_variable          m_cndRoundDrain;
+    std::optional<std::string>       m_optPendingRoundDrainId;
 };
 }
