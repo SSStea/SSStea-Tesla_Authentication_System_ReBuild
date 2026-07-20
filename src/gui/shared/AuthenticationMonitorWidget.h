@@ -26,7 +26,7 @@ public:
         std::vector<protocol::PacketFailureControlDetails> vecFailures,
         std::vector<protocol::DosSummaryControlDetails> vecDosSummaries
     );
-    /** @brief 更新节点生成的逐轮归档记录，供CSV/JSON实验数据导出。 */
+    /** @brief 更新节点生成的逐轮归档记录，并触发后台逐轮CSV/JSON导出。 */
     void setMetricSnapshots(
         std::vector<metrics::AuthenticationMetricRecord> vecMetrics
     );

@@ -7,6 +7,7 @@
 #include <QColor>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QHeaderView>
@@ -19,14 +20,17 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageBox>
+#include <QSaveFile>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QTableView>
 #include <QTextEdit>
 #include <QVBoxLayout>
+#include <QDebug>
 
 #include <algorithm>
 #include <array>
+#include <deque>
 #include <map>
 #include <optional>
 #include <set>
@@ -657,6 +661,40 @@ QString strFailureDetails(const PacketFailureControlDetails& detFailure)
     }
     return lstLines.join(QLatin1Char('\n'));
 }
+
+struct RoundObservationRecords final
+{
+    std::map<std::uint64_t, PacketObservationControlDetails> mapPackets;
+    std::map<std::uint64_t, PacketFailureControlDetails>     mapFailures;
+};
+
+QString strSafeRoundFileName(const std::string& strRoundId)
+{
+    QString strFileName = QString::fromStdString(strRoundId);
+    for (qsizetype nIndex = 0; nIndex < strFileName.size(); ++nIndex)
+    {
+        const QChar chValue = strFileName.at(nIndex);
+        if (!chValue.isLetterOrNumber()
+            && chValue != QLatin1Char('-')
+            && chValue != QLatin1Char('_'))
+        {
+            strFileName[nIndex] = QLatin1Char('_');
+        }
+    }
+
+    return strFileName.isEmpty() ? QStringLiteral("unknown-round") : strFileName;
+}
+
+QString strAutomaticExportDirectory()
+{
+    QString strRoamingPath = qEnvironmentVariable("APPDATA");
+    if (strRoamingPath.isEmpty())
+    {
+        strRoamingPath = QDir::homePath() + QStringLiteral("/AppData/Roaming");
+    }
+
+    return QDir(strRoamingPath).filePath(QStringLiteral("Authentication_System"));
+}
 }
 
 class AuthenticationMonitorWidget::Impl final
@@ -694,12 +732,14 @@ public:
         std::vector<DosSummaryControlDetails> vecDosSummaries
     )
     {
+        captureRoundRecords(vecPackets, vecFailures);
         m_vecPackets = vecPackets;
         m_vecFailures = vecFailures;
         m_vecDosSummaries = vecDosSummaries;
         m_pPacketModel->setRecords(std::move(vecPackets), vecFailures);
         m_pProxyModel->setFailures(vecFailures);
         refreshQuickButtonCounts();
+        exportCompletedRounds();
 
         if (vecDosSummaries.empty())
         {
@@ -723,19 +763,283 @@ public:
         std::vector<AuthenticationMetricRecord> vecMetrics
     )
     {
-        m_vecRoundArchives.clear();
-        for (AuthenticationMetricRecord& varMetric : vecMetrics)
+        for (const AuthenticationMetricRecord& varMetric : vecMetrics)
         {
-            if (auto* pArchive = std::get_if<
+            const auto* pArchive = std::get_if<
                     AuthenticationRoundArchiveSummary
-                >(&varMetric))
+                >(&varMetric);
+            if (pArchive == nullptr)
             {
-                m_vecRoundArchives.push_back(std::move(*pArchive));
+                continue;
+            }
+
+            markRoundCompleted(pArchive->strRunId());
+        }
+
+        exportCompletedRounds();
+    }
+
+private:
+    void captureRoundRecords(
+        const std::vector<PacketObservationControlDetails>& vecPackets,
+        const std::vector<PacketFailureControlDetails>& vecFailures
+    )
+    {
+        for (const PacketObservationControlDetails& detPacket : vecPackets)
+        {
+            const std::string& strRoundId = detPacket.strRoundId();
+            if (strRoundId.empty()
+                || m_setRetiredRoundIds.find(strRoundId)
+                    != m_setRetiredRoundIds.end())
+            {
+                continue;
+            }
+
+            auto& mapPackets = m_mapRoundRecords[strRoundId].mapPackets;
+            if (mapPackets.emplace(detPacket.u64EventId(), detPacket).second)
+            {
+                m_setDirtyRoundIds.insert(strRoundId);
+            }
+        }
+
+        for (const PacketFailureControlDetails& detFailure : vecFailures)
+        {
+            const std::string& strRoundId = detFailure.strRoundId();
+            if (strRoundId.empty()
+                || m_setRetiredRoundIds.find(strRoundId)
+                    != m_setRetiredRoundIds.end())
+            {
+                continue;
+            }
+
+            auto& mapFailures = m_mapRoundRecords[strRoundId].mapFailures;
+            if (mapFailures.emplace(detFailure.u64EventId(), detFailure).second)
+            {
+                m_setDirtyRoundIds.insert(strRoundId);
             }
         }
     }
 
-private:
+    void markRoundCompleted(const std::string& strRoundId)
+    {
+        if (strRoundId.empty()
+            || m_setRetiredRoundIds.find(strRoundId)
+                != m_setRetiredRoundIds.end())
+        {
+            return;
+        }
+
+        if (m_setCompletedRoundIds.insert(strRoundId).second)
+        {
+            m_deqCompletedRoundIds.push_back(strRoundId);
+            m_setDirtyRoundIds.insert(strRoundId);
+        }
+
+        while (m_deqCompletedRoundIds.size() > 2U)
+        {
+            const std::string strRetiredRoundId
+                = std::move(m_deqCompletedRoundIds.front());
+            m_deqCompletedRoundIds.pop_front();
+            m_setCompletedRoundIds.erase(strRetiredRoundId);
+            m_setDirtyRoundIds.erase(strRetiredRoundId);
+            m_mapRoundRecords.erase(strRetiredRoundId);
+            m_setRetiredRoundIds.insert(strRetiredRoundId);
+        }
+    }
+
+    void exportCompletedRounds()
+    {
+        const std::vector<std::string> vecDirtyRoundIds(
+            m_setDirtyRoundIds.begin(),
+            m_setDirtyRoundIds.end()
+        );
+        for (const std::string& strRoundId : vecDirtyRoundIds)
+        {
+            if (m_setCompletedRoundIds.find(strRoundId)
+                == m_setCompletedRoundIds.end())
+            {
+                continue;
+            }
+
+            const auto itrRecords = m_mapRoundRecords.find(strRoundId);
+            if (itrRecords == m_mapRoundRecords.end()
+                || (itrRecords->second.mapPackets.empty()
+                    && itrRecords->second.mapFailures.empty()))
+            {
+                continue;
+            }
+
+            if (bWriteRoundFiles(strRoundId, itrRecords->second))
+            {
+                m_setDirtyRoundIds.erase(strRoundId);
+            }
+        }
+    }
+
+    bool bWriteRoundFiles(
+        const std::string& strRoundId,
+        const RoundObservationRecords& recRound
+    ) const
+    {
+        const QString strDirectory = strAutomaticExportDirectory();
+        if (!QDir().mkpath(strDirectory))
+        {
+            qWarning() << "Unable to create authentication export directory:"
+                       << strDirectory;
+            return false;
+        }
+
+        const QString strBaseName = QStringLiteral("authentication_round_%1")
+            .arg(strSafeRoundFileName(strRoundId));
+        const QString strCsvPath = QDir(strDirectory).filePath(
+            strBaseName + QStringLiteral(".csv")
+        );
+        const QString strJsonPath = QDir(strDirectory).filePath(
+            strBaseName + QStringLiteral(".json")
+        );
+
+        return bWriteFile(strCsvPath, arrCreateRoundCsv(strRoundId, recRound))
+            && bWriteFile(strJsonPath, arrCreateRoundJson(strRoundId, recRound));
+    }
+
+    bool bWriteFile(const QString& strPath, const QByteArray& arrContent) const
+    {
+        QSaveFile filOutput(strPath);
+        if (!filOutput.open(QIODevice::WriteOnly)
+            || filOutput.write(arrContent) != arrContent.size()
+            || !filOutput.commit())
+        {
+            qWarning() << "Unable to write authentication round export:"
+                       << strPath << filOutput.errorString();
+            return false;
+        }
+
+        return true;
+    }
+
+    QByteArray arrCreateRoundCsv(
+        const std::string& strRoundId,
+        const RoundObservationRecords& recRound
+    ) const
+    {
+        QByteArray arrOutput;
+        arrOutput.append(
+            "recordType,timestampMs,roundId,direction,senderId,chainId,"
+            "intervalIndex,keyIndex,packetIndex,datagramLength,result,"
+            "failureType,reason,rawDatagramHex\r\n"
+        );
+
+        for (const auto& [u64EventId, detPacket] : recRound.mapPackets)
+        {
+            static_cast<void>(u64EventId);
+            const std::uint32_t u32KeyIndex
+                = detPacket.u32IntervalIndex() > detPacket.u32DisclosureDelay()
+                && std::holds_alternative<DisclosurePacketObservationDetails>(
+                    detPacket.varPayloadDetails()
+                )
+                ? detPacket.u32IntervalIndex() - detPacket.u32DisclosureDelay()
+                : detPacket.u32IntervalIndex();
+            const QStringList lstColumns{
+                QStringLiteral("PACKET"),
+                QString::number(detPacket.u64TimestampMilliseconds()),
+                strCsv(QString::fromStdString(strRoundId)),
+                detPacket.dirDirection() == PacketObservationDirection::Tx
+                    ? QStringLiteral("TX") : QStringLiteral("RX"),
+                strCsv(QString::fromStdString(detPacket.strSenderId())),
+                QString::number(detPacket.u64ChainId()),
+                QString::number(detPacket.u32IntervalIndex()),
+                QString::number(u32KeyIndex),
+                QString::number(detPacket.u32PacketIndex()),
+                QString::number(detPacket.vecRawDatagram().size()),
+                strCsv(strPacketStatus(detPacket.statusAuthentication())),
+                QString(),
+                strCsv(QString::fromStdString(detPacket.strReason())),
+                strCsv(strHex(detPacket.vecRawDatagram()))
+            };
+            arrOutput.append(
+                (lstColumns.join(QLatin1Char(',')) + QStringLiteral("\r\n"))
+                    .toUtf8()
+            );
+        }
+
+        for (const auto& [u64EventId, detFailure] : recRound.mapFailures)
+        {
+            static_cast<void>(u64EventId);
+            const QStringList lstColumns{
+                QStringLiteral("FAILURE"),
+                QString::number(detFailure.u64TimestampMilliseconds()),
+                strCsv(QString::fromStdString(strRoundId)),
+                QStringLiteral("RX"),
+                strCsv(QString::fromStdString(detFailure.strSenderId())),
+                QString::number(detFailure.u64ChainId()),
+                QString::number(detFailure.u32IntervalIndex()),
+                QString::number(detFailure.u32IntervalIndex()),
+                QString::number(detFailure.u32PacketIndex()),
+                QString(),
+                bIsMissingFailure(detFailure.typeFailure())
+                    ? QStringLiteral("MISSING")
+                    : QStringLiteral("AUTHENTICATION_FAILED"),
+                strCsv(strFailureType(detFailure.typeFailure())),
+                strCsv(QString::fromStdString(detFailure.strReason())),
+                QString()
+            };
+            arrOutput.append(
+                (lstColumns.join(QLatin1Char(',')) + QStringLiteral("\r\n"))
+                    .toUtf8()
+            );
+        }
+
+        return arrOutput;
+    }
+
+    QByteArray arrCreateRoundJson(
+        const std::string& strRoundId,
+        const RoundObservationRecords& recRound
+    ) const
+    {
+        QJsonArray arrPackets;
+        for (const auto& [u64EventId, detPacket] : recRound.mapPackets)
+        {
+            QJsonObject objPacket;
+            objPacket.insert(QStringLiteral("eventId"), QString::number(u64EventId));
+            objPacket.insert(QStringLiteral("timestampMs"), QString::number(detPacket.u64TimestampMilliseconds()));
+            objPacket.insert(QStringLiteral("direction"), detPacket.dirDirection() == PacketObservationDirection::Tx ? QStringLiteral("TX") : QStringLiteral("RX"));
+            objPacket.insert(QStringLiteral("senderId"), QString::fromStdString(detPacket.strSenderId()));
+            objPacket.insert(QStringLiteral("chainId"), QString::number(detPacket.u64ChainId()));
+            objPacket.insert(QStringLiteral("intervalIndex"), static_cast<qint64>(detPacket.u32IntervalIndex()));
+            objPacket.insert(QStringLiteral("packetIndex"), static_cast<qint64>(detPacket.u32PacketIndex()));
+            objPacket.insert(QStringLiteral("datagramLength"), static_cast<qint64>(detPacket.vecRawDatagram().size()));
+            objPacket.insert(QStringLiteral("result"), strPacketStatus(detPacket.statusAuthentication()));
+            objPacket.insert(QStringLiteral("reason"), QString::fromStdString(detPacket.strReason()));
+            objPacket.insert(QStringLiteral("rawDatagramHex"), strHex(detPacket.vecRawDatagram()));
+            arrPackets.append(objPacket);
+        }
+
+        QJsonArray arrFailures;
+        for (const auto& [u64EventId, detFailure] : recRound.mapFailures)
+        {
+            QJsonObject objFailure;
+            objFailure.insert(QStringLiteral("eventId"), QString::number(u64EventId));
+            objFailure.insert(QStringLiteral("packetEventId"), QString::number(detFailure.u64PacketEventId()));
+            objFailure.insert(QStringLiteral("timestampMs"), QString::number(detFailure.u64TimestampMilliseconds()));
+            objFailure.insert(QStringLiteral("senderId"), QString::fromStdString(detFailure.strSenderId()));
+            objFailure.insert(QStringLiteral("chainId"), QString::number(detFailure.u64ChainId()));
+            objFailure.insert(QStringLiteral("intervalIndex"), static_cast<qint64>(detFailure.u32IntervalIndex()));
+            objFailure.insert(QStringLiteral("packetIndex"), static_cast<qint64>(detFailure.u32PacketIndex()));
+            objFailure.insert(QStringLiteral("category"), bIsMissingFailure(detFailure.typeFailure()) ? QStringLiteral("MISSING") : QStringLiteral("AUTHENTICATION_FAILED"));
+            objFailure.insert(QStringLiteral("failureType"), strFailureType(detFailure.typeFailure()));
+            objFailure.insert(QStringLiteral("reason"), QString::fromStdString(detFailure.strReason()));
+            arrFailures.append(objFailure);
+        }
+
+        QJsonObject objRoot;
+        objRoot.insert(QStringLiteral("roundId"), QString::fromStdString(strRoundId));
+        objRoot.insert(QStringLiteral("exportedAtMs"), QString::number(QDateTime::currentMSecsSinceEpoch()));
+        objRoot.insert(QStringLiteral("packets"), arrPackets);
+        objRoot.insert(QStringLiteral("failures"), arrFailures);
+        return QJsonDocument(objRoot).toJson(QJsonDocument::Indented);
+    }
+
     void exportRoundArchives(bool bJson)
     {
         if (m_vecRoundArchives.empty())
@@ -1387,6 +1691,11 @@ private:
     std::vector<PacketFailureControlDetails> m_vecFailures;
     std::vector<DosSummaryControlDetails> m_vecDosSummaries;
     std::vector<AuthenticationRoundArchiveSummary> m_vecRoundArchives;
+    std::map<std::string, RoundObservationRecords> m_mapRoundRecords;
+    std::set<std::string> m_setCompletedRoundIds;
+    std::set<std::string> m_setDirtyRoundIds;
+    std::set<std::string> m_setRetiredRoundIds;
+    std::deque<std::string> m_deqCompletedRoundIds;
 };
 
 AuthenticationMonitorWidget::AuthenticationMonitorWidget(QWidget* pParent)
