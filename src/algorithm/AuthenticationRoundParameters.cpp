@@ -94,13 +94,6 @@ AuthenticationRoundParameters::AuthenticationRoundParameters(
     {
         throw std::invalid_argument("Improved TESLA requires grouping parameters");
     }
-
-    if (m_u32PacketsPerInterval % m_optImprovedParameters->u32GroupSize() != 0)
-    {
-        throw std::invalid_argument(
-            "Packets per interval must be divisible by improved group size"
-        );
-    }
 }
 
 crypto::CryptoAlgorithm AuthenticationRoundParameters::algCryptoAlgorithm() const noexcept
@@ -126,6 +119,26 @@ std::uint32_t AuthenticationRoundParameters::u32PacketsPerInterval() const noexc
 std::uint32_t AuthenticationRoundParameters::u32DisclosureDelay() const noexcept
 {
     return m_u32DisclosureDelay;
+}
+
+std::uint32_t AuthenticationRoundParameters::u32FastGroupKeyIndex(
+    std::uint32_t u32GroupLastIntervalIndex
+) const
+{
+    if (u32GroupLastIntervalIndex == 0
+        || u32GroupLastIntervalIndex > m_nDataIntervalCount)
+    {
+        throw std::out_of_range(
+            "Improved group last interval is outside the configured round"
+        );
+    }
+
+    if (u32GroupLastIntervalIndex <= m_u32DisclosureDelay)
+    {
+        return 1;
+    }
+
+    return u32GroupLastIntervalIndex - m_u32DisclosureDelay + 1U;
 }
 
 std::uint32_t AuthenticationRoundParameters::u32IntervalMilliseconds() const noexcept

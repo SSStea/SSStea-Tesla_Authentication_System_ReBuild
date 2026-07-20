@@ -64,14 +64,14 @@ const AuthenticationPacketInput::Message& AuthenticationPacketInput::arrMessage(
 AuthenticationGroupInput::AuthenticationGroupInput(
     std::string strSenderId,
     std::uint64_t u64ChainId,
-    std::uint32_t u32IntervalIndex,
+    std::uint32_t u32FirstIntervalIndex,
     std::uint32_t u32GroupIndex,
     std::uint32_t u32FirstPacketIndex,
     std::vector<PacketSlot> vecPacketSlots
 )
     : m_strSenderId(std::move(strSenderId)),
       m_u64ChainId(u64ChainId),
-      m_u32IntervalIndex(u32IntervalIndex),
+      m_u32FirstIntervalIndex(u32FirstIntervalIndex),
       m_u32GroupIndex(u32GroupIndex),
       m_u32FirstPacketIndex(u32FirstPacketIndex),
       m_vecPacketSlots(std::move(vecPacketSlots))
@@ -86,7 +86,7 @@ AuthenticationGroupInput::AuthenticationGroupInput(
         throw std::invalid_argument("Group Sender ID is too long");
     }
 
-    if (m_u32IntervalIndex == 0
+    if (m_u32FirstIntervalIndex == 0
         || m_u32GroupIndex == 0
         || m_u32FirstPacketIndex == 0)
     {
@@ -144,9 +144,9 @@ std::uint32_t AuthenticationGroupInput::u32GroupIndex() const noexcept
     return m_u32GroupIndex;
 }
 
-std::uint32_t AuthenticationGroupInput::u32IntervalIndex() const noexcept
+std::uint32_t AuthenticationGroupInput::u32FirstIntervalIndex() const noexcept
 {
-    return m_u32IntervalIndex;
+    return m_u32FirstIntervalIndex;
 }
 
 const std::vector<AuthenticationGroupInput::PacketSlot>&
@@ -157,6 +157,8 @@ AuthenticationGroupInput::vecPacketSlots() const noexcept
 
 void AuthenticationGroupInput::validatePacketSlots() const
 {
+    std::uint32_t u32PreviousIntervalIndex = m_u32FirstIntervalIndex;
+
     for (std::size_t nPosition = 0; nPosition < m_vecPacketSlots.size(); ++nPosition)
     {
         const PacketSlot& optPacket = m_vecPacketSlots[nPosition];
@@ -168,13 +170,21 @@ void AuthenticationGroupInput::validatePacketSlots() const
 
         const AuthenticationPacketInput& pktCurrent = optPacket.value();
         if (pktCurrent.strSenderId() != m_strSenderId
-            || pktCurrent.u64ChainId() != m_u64ChainId
-            || pktCurrent.u32IntervalIndex() != m_u32IntervalIndex)
+            || pktCurrent.u64ChainId() != m_u64ChainId)
         {
             throw std::invalid_argument(
                 "All group packets must share one authentication context"
             );
         }
+
+        if (pktCurrent.u32IntervalIndex() < m_u32FirstIntervalIndex
+            || pktCurrent.u32IntervalIndex() < u32PreviousIntervalIndex)
+        {
+            throw std::invalid_argument(
+                "Group packet intervals must follow authentication order"
+            );
+        }
+        u32PreviousIntervalIndex = pktCurrent.u32IntervalIndex();
 
         const std::uint64_t u64ExpectedPacketIndex =
             static_cast<std::uint64_t>(m_u32FirstPacketIndex) + nPosition;

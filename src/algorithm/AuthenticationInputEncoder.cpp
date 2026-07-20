@@ -48,14 +48,15 @@ crypto::ByteBuffer AuthenticationInputEncoder::vecEncodeFastGroupInput(
     // 布局头：Sender长度+Sender、ChainId、Interval、GroupIndex、固定槽位数量。
     appendSenderId(vecOutput, grpInput.strSenderId());
     appendUint64(vecOutput, grpInput.u64ChainId());
-    appendUint32(vecOutput, grpInput.u32IntervalIndex());
+    appendUint32(vecOutput, grpInput.u32FirstIntervalIndex());
     appendUint32(vecOutput, grpInput.u32GroupIndex());
     appendUint32(vecOutput, static_cast<std::uint32_t>(grpInput.nPacketSlotCount()));
 
-    // 快速路径只接受完整组，因此每个槽位按顺序编码PacketIndex和Message。
+    // 快速路径只接受完整组，因此每个槽位按顺序编码Interval、PacketIndex和Message。
     for (const AuthenticationGroupInput::PacketSlot& optPacket : grpInput.vecPacketSlots())
     {
         const AuthenticationPacketInput& pktCurrent = optPacket.value();
+        appendUint32(vecOutput, pktCurrent.u32IntervalIndex());
         appendUint32(vecOutput, pktCurrent.u32PacketIndex());
         appendBytes(vecOutput, pktCurrent.arrMessage().data(), pktCurrent.arrMessage().size());
     }

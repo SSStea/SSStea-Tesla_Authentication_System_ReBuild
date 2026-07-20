@@ -65,6 +65,9 @@ public:
     std::uint32_t u32TotalPacketCount() const noexcept;
     std::uint32_t u32PacketsPerInterval() const noexcept;
     std::uint32_t u32DisclosureDelay() const noexcept;
+    std::uint32_t u32FastGroupKeyIndex(
+        std::uint32_t u32GroupLastIntervalIndex
+    ) const;
     std::uint32_t u32IntervalMilliseconds() const noexcept;
     std::uint64_t u64StartTimestampMilliseconds() const noexcept;
     std::size_t nDataIntervalCount() const noexcept;

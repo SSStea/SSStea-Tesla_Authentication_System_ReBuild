@@ -88,13 +88,6 @@ UdpAuthenticationPacketContext::UdpAuthenticationPacketContext(
         );
     }
 
-    if (m_u32PacketsPerInterval % m_u32GroupSize != 0)
-    {
-        throw std::invalid_argument(
-            "Packets per interval must be divisible by group size"
-        );
-    }
-
     constexpr std::size_t MAX_SAFE_TAU_COUNT = 2043;
     if (m_nTauCount > MAX_SAFE_TAU_COUNT)
     {
