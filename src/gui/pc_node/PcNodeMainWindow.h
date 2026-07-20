@@ -29,11 +29,9 @@ public:
 
 private:
     QWidget* pCreateStatusPage();
-    QWidget* pCreateFileStatusPage();
     QWidget* pCreateLogPage();
     void refreshStatus();
     void appendLog(const QString& strMessage);
-    void appendFileStatus(const QString& strMessage);
     void refreshAuthenticationViews();
     void applyStyle();
 
@@ -43,7 +41,6 @@ private:
     QLabel*                 m_pUdpValue;
     QLabel*                 m_pSenderValue;
     QLabel*                 m_pReceiverValue;
-    QTextEdit*              m_pFileStatusEdit;
     QTextEdit*              m_pLogEdit;
     tesla::gui::AuthenticationMonitorWidget* m_pAuthenticationMonitor;
     PcLocalKeyChainWidget*  m_pKeyChainWidget;

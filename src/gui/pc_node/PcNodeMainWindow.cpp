@@ -37,7 +37,6 @@ PcNodeMainWindow::PcNodeMainWindow(
       m_pUdpValue(nullptr),
       m_pSenderValue(nullptr),
       m_pReceiverValue(nullptr),
-      m_pFileStatusEdit(nullptr),
       m_pLogEdit(nullptr),
       m_pAuthenticationMonitor(nullptr),
       m_pKeyChainWidget(nullptr),
@@ -66,7 +65,6 @@ PcNodeMainWindow::PcNodeMainWindow(
     pTabs->addTab(m_pKeyChainWidget, QStringLiteral("密钥链"));
     m_pMatrixWidget = new PcMatrixLocationWidget(pTabs);
     pTabs->addTab(m_pMatrixWidget, QStringLiteral("矩阵"));
-    pTabs->addTab(pCreateFileStatusPage(), QStringLiteral("文件"));
     pTabs->addTab(pCreateLogPage(), QStringLiteral("日志"));
     pLayout->addWidget(pTabs, 1);
     setCentralWidget(pCentralWidget);
@@ -83,12 +81,6 @@ PcNodeMainWindow::PcNodeMainWindow(
         &PcNodeNetworkController::logMessage,
         this,
         &PcNodeMainWindow::appendLog
-    );
-    connect(
-        &m_ctlNetwork,
-        &PcNodeNetworkController::fileStatusMessage,
-        this,
-        &PcNodeMainWindow::appendFileStatus
     );
     connect(
         &m_ctlNetwork,
@@ -157,35 +149,6 @@ QWidget* PcNodeMainWindow::pCreateLogPage()
     m_pLogEdit->setPlaceholderText(QStringLiteral("真实网络状态日志将在此显示"));
     pLayout->addWidget(m_pLogEdit);
     return pPage;
-}
-
-QWidget* PcNodeMainWindow::pCreateFileStatusPage()
-{
-    QWidget* pPage = new QWidget(this);
-    QVBoxLayout* pLayout = new QVBoxLayout(pPage);
-    QLabel* pHintLabel = new QLabel(
-        QStringLiteral(
-            "这里显示TCP上传完成、Sender 32B切片和Receiver恢复Hash状态。"
-            "认证成功的恢复文件使用原子写入保存到应用数据目录。"
-        ),
-        pPage
-    );
-    pHintLabel->setWordWrap(true);
-    pHintLabel->setObjectName(QStringLiteral("hintLabel"));
-    m_pFileStatusEdit = new QTextEdit(pPage);
-    m_pFileStatusEdit->setReadOnly(true);
-    m_pFileStatusEdit->setPlaceholderText(QStringLiteral("尚无文件认证事件"));
-    pLayout->addWidget(pHintLabel);
-    pLayout->addWidget(m_pFileStatusEdit, 1);
-    return pPage;
-}
-
-void PcNodeMainWindow::appendFileStatus(const QString& strMessage)
-{
-    m_pFileStatusEdit->append(
-        QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz "))
-        + strMessage
-    );
 }
 
 void PcNodeMainWindow::refreshAuthenticationViews()
