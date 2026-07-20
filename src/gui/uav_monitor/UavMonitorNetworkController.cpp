@@ -138,7 +138,7 @@ void UavMonitorNetworkController::connectToNode(
 {
     if (strHostAddress.trimmed().isEmpty() || u16Port == 0)
     {
-        emit logMessage(QStringLiteral("NodeAgent地址或端口无效"));
+        emit logMessage(QStringLiteral("无人机节点地址或端口无效"));
         return;
     }
 
@@ -297,7 +297,7 @@ void UavMonitorNetworkController::processTcpData()
         {
             const ErrorResponseControlDetails& detError =
                 std::get<ErrorResponseControlDetails>(msgMessage.varDetails());
-            emit logMessage(QStringLiteral("NodeAgent返回错误 %1：%2")
+            emit logMessage(QStringLiteral("无人机节点返回错误 %1：%2")
                 .arg(
                     QString::fromStdString(detError.strErrorCode()),
                     QString::fromStdString(detError.strMessage())
@@ -571,7 +571,7 @@ void UavMonitorNetworkController::checkConnection()
 
     if (nLastResponseAgeMilliseconds() >= m_durResponseTimeout.count())
     {
-        emit logMessage(QStringLiteral("NodeAgent响应超时，MONITOR连接已关闭"));
+        emit logMessage(QStringLiteral("无人机节点响应超时，MONITOR连接已关闭"));
         m_pSocket->abort();
         return;
     }

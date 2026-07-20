@@ -74,8 +74,8 @@ UavMonitorMainWindow::UavMonitorMainWindow(
     );
     pTabs->addTab(m_pAuthenticationMonitor, QStringLiteral("报文与展示"));
     m_ptrMetricsView = std::make_unique<AuthenticationMetricsView>(pTabs);
-    pTabs->addTab(m_ptrMetricsView->pComputationPage(), QStringLiteral("计算"));
-    pTabs->addTab(m_ptrMetricsView->pEnergyPage(), QStringLiteral("估算能耗"));
+    pTabs->addTab(m_ptrMetricsView->pComputationPage(), QStringLiteral("计算开销"));
+    pTabs->addTab(m_ptrMetricsView->pEnergyPage(), QStringLiteral("能耗"));
     pTabs->addTab(pCreateLogPage(), QStringLiteral("日志"));
     pLayout->addWidget(pTabs, 1);
     setCentralWidget(pCentralWidget);
@@ -127,7 +127,7 @@ QWidget* UavMonitorMainWindow::pCreateConnectionPage()
     QPushButton* pDisconnectButton = new QPushButton(QStringLiteral("断开"), pPage);
     QPushButton* pRefreshButton = new QPushButton(QStringLiteral("刷新状态"), pPage);
     pConnectButton->setObjectName(QStringLiteral("primaryButton"));
-    pConnectionLayout->addWidget(new QLabel(QStringLiteral("NodeAgent IP"), pPage));
+    pConnectionLayout->addWidget(new QLabel(QStringLiteral("无人机节点 IP"), pPage));
     pConnectionLayout->addWidget(m_pHostEdit, 1);
     pConnectionLayout->addWidget(new QLabel(QStringLiteral("端口"), pPage));
     pConnectionLayout->addWidget(m_pPortSpin);
