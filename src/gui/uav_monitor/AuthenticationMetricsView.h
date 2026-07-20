@@ -32,9 +32,6 @@ private:
         qreal dMaximumX,
         qreal dMaximumY
     );
-    /** @brief 导出当前监视端保留的真实指标记录，便于离线复核。 */
-    void exportRecords(bool bJson) const;
-
     QWidget*     m_pComputationPage;
     QWidget*     m_pEnergyPage;
     QLabel*      m_pComputationSummary;
