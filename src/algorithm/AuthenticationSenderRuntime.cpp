@@ -559,16 +559,14 @@ private:
 
         if (prmRound.modeAuthentication() == TeslaAuthenticationMode::Native)
         {
-            buildNativeInterval(
-                ctxSender,
-                varWorkload,
-                crpProvider,
-                ctxPacket,
-                u32IntervalIndex,
-                u32FirstPacketIndex,
-                u32LastPacketIndex,
-                intDatagrams
-            );
+            buildNativeInterval(ctxSender,
+                                varWorkload,
+                                crpProvider,
+                                ctxPacket,
+                                u32IntervalIndex,
+                                u32FirstPacketIndex,
+                                u32LastPacketIndex,
+                                intDatagrams);
             return;
         }
 
@@ -587,12 +585,16 @@ private:
     AuthenticationGroupInput grpCreate(
         const SenderAuthenticationContext& ctxSender,
         const SenderPayloadWorkload& varWorkload,
-        std::uint32_t u32IntervalIndex,
         std::uint32_t u32GroupIndex,
         std::uint32_t u32FirstPacketIndex,
         std::uint32_t u32LastPacketIndex
     ) const
     {
+        const AuthenticationRoundParameters& prmRound
+            = ctxSender.matMaterial().prmRoundParameters();
+        const std::uint32_t u32FirstIntervalIndex
+            = ((u32FirstPacketIndex - 1U) / prmRound.u32PacketsPerInterval())
+              + 1U;
         std::vector<AuthenticationGroupInput::PacketSlot> vecSlots;
         vecSlots.reserve(u32LastPacketIndex - u32FirstPacketIndex + 1U);
 
@@ -600,10 +602,13 @@ private:
              u32PacketIndex <= u32LastPacketIndex;
              ++u32PacketIndex)
         {
+            const std::uint32_t u32PacketIntervalIndex
+                = ((u32PacketIndex - 1U) / prmRound.u32PacketsPerInterval())
+                  + 1U;
             vecSlots.emplace_back(AuthenticationPacketInput(
                 ctxSender.matMaterial().strSenderId(),
                 ctxSender.matMaterial().u64ChainId(),
-                u32IntervalIndex,
+                u32PacketIntervalIndex,
                 u32PacketIndex,
                 arrWorkloadMessage(varWorkload, u32PacketIndex)
             ));
@@ -612,7 +617,7 @@ private:
         return AuthenticationGroupInput(
             ctxSender.matMaterial().strSenderId(),
             ctxSender.matMaterial().u64ChainId(),
-            u32IntervalIndex,
+            u32FirstIntervalIndex,
             u32GroupIndex,
             u32FirstPacketIndex,
             std::move(vecSlots)
@@ -626,8 +631,8 @@ private:
         std::uint32_t u32FirstPacketIndex
     ) const
     {
-        const AuthenticationRoundParameters& prmRound =
-            ctxSender.matMaterial().prmRoundParameters();
+        const AuthenticationRoundParameters& prmRound
+            = ctxSender.matMaterial().prmRoundParameters();
         if (u32PacketIndex != u32FirstPacketIndex
             || u32IntervalIndex <= prmRound.u32DisclosureDelay())
         {
@@ -654,20 +659,17 @@ private:
             ctxSender,
             varWorkload,
             u32IntervalIndex,
-            u32IntervalIndex,
             u32FirstPacketIndex,
             u32LastPacketIndex
         );
         const NativeTeslaStrategy stgStrategy(crpProvider);
-        const TeslaAuthenticationDetails varAuthentication =
-            stgStrategy.authCreateAuthenticationDetails(
+        const TeslaAuthenticationDetails varAuthentication
+            = stgStrategy.authCreateAuthenticationDetails(
                 grpInterval,
                 ctxSender.keyChain().digDataKey(u32IntervalIndex)
             );
-        const NativeAuthenticationDetails& detAuthentication =
-            std::get<NativeAuthenticationDetails>(
-                varAuthentication
-            );
+        const NativeAuthenticationDetails& detAuthentication
+            = std::get<NativeAuthenticationDetails>(varAuthentication);
 
         for (std::uint32_t u32PacketIndex = u32FirstPacketIndex;
              u32PacketIndex <= u32LastPacketIndex;
@@ -708,95 +710,83 @@ private:
         IntervalDatagrams& intDatagrams
     ) const
     {
-        const ImprovedTeslaParameters& prmImproved =
-            ctxSender.matMaterial().prmRoundParameters()
-                .optImprovedParameters().value();
+        const AuthenticationRoundParameters& prmRound
+            = ctxSender.matMaterial().prmRoundParameters();
+        const ImprovedTeslaParameters& prmImproved
+            = prmRound.optImprovedParameters().value();
         const ImprovedTeslaStrategy stgStrategy(
             crpProvider,
             prmImproved.u32GroupSize(),
             prmImproved.u32DetectionThreshold()
         );
 
-        std::uint32_t u32GroupFirstPacket = u32FirstPacketIndex;
-        while (u32GroupFirstPacket <= u32LastPacketIndex)
+        for (std::uint32_t u32PacketIndex = u32FirstPacketIndex;
+             u32PacketIndex <= u32LastPacketIndex;
+             ++u32PacketIndex)
         {
-            const std::uint32_t u32GroupLastPacket = std::min(
-                u32LastPacketIndex,
-                u32GroupFirstPacket + prmImproved.u32GroupSize() - 1U
-            );
-            const std::uint32_t u32GroupIndex =
-                ((u32GroupFirstPacket - 1U) / prmImproved.u32GroupSize()) + 1U;
-            const AuthenticationGroupInput grpInput = grpCreate(
-                ctxSender,
-                varWorkload,
-                u32IntervalIndex,
-                u32GroupIndex,
-                u32GroupFirstPacket,
-                u32GroupLastPacket
-            );
-            const TeslaAuthenticationDetails varAuthentication =
-                stgStrategy.authCreateAuthenticationDetails(
-                    grpInput,
-                    ctxSender.keyChain().digDataKey(u32IntervalIndex)
-                );
-            const ImprovedAuthenticationDetails& detAuthentication =
-                std::get<ImprovedAuthenticationDetails>(
-                    varAuthentication
-                );
-
-            for (std::uint32_t u32PacketIndex = u32GroupFirstPacket;
-                 u32PacketIndex <= u32GroupLastPacket;
-                 ++u32PacketIndex)
+            std::optional<protocol::ImprovedUdpGroupAuthenticationDetails>
+                optGroupDetails;
+            if (ctxPacket.bIsImprovedGroupEnd(u32PacketIndex))
             {
-                std::optional<protocol::ImprovedUdpGroupAuthenticationDetails>
-                    optGroupDetails;
-                if (u32PacketIndex == u32GroupLastPacket)
+                const std::uint32_t u32GroupIndex
+                    = ((u32PacketIndex - 1U) / prmImproved.u32GroupSize()) + 1U;
+                const std::uint32_t u32GroupFirstPacket
+                    = (u32GroupIndex - 1U) * prmImproved.u32GroupSize() + 1U;
+                const std::uint32_t u32GroupLastPacket = u32PacketIndex;
+                const AuthenticationGroupInput grpInput = grpCreate(ctxSender,
+                                                                    varWorkload,
+                                                                    u32GroupIndex,
+                                                                    u32GroupFirstPacket,
+                                                                    u32GroupLastPacket);
+                std::vector<crypto::Digest> vecPacketDataKeys;
+                vecPacketDataKeys.reserve(grpInput.nPacketSlotCount());
+                for (const AuthenticationGroupInput::PacketSlot& optPacket :
+                     grpInput.vecPacketSlots())
                 {
-                    std::vector<protocol::BinaryBlock> vecTau;
-                    vecTau.reserve(detAuthentication.vecSamdTau().size());
-                    for (const crypto::Digest& digTau
-                        : detAuthentication.vecSamdTau())
-                    {
-                        vecTau.push_back(arrMapDigest(digTau));
-                    }
-
-                    optGroupDetails.emplace(
-                        std::move(vecTau),
-                        arrMapDigest(detAuthentication.optFastGroupTag().value())
-                    );
+                    vecPacketDataKeys.push_back(
+                        ctxSender.keyChain().digDataKey(optPacket->u32IntervalIndex()));
                 }
 
-                intDatagrams.vecDatagrams.push_back(
-                    protocol::UdpAuthenticationPacketCodec::vecEncode(
-                        protocol::UdpAuthenticationPacket(protocol::UdpDataPacket(
-                            ctxSender.matMaterial().u64ChainId(),
-                            u32IntervalIndex,
-                            u32PacketIndex,
-                            arrWorkloadMessage(varWorkload, u32PacketIndex),
-                            optDisclosureForPacket(
-                                ctxSender,
-                                u32IntervalIndex,
-                                u32PacketIndex,
-                                u32FirstPacketIndex
-                            ),
-                            protocol::ImprovedUdpAuthenticationDetails(
-                                std::move(optGroupDetails)
-                            )
-                        )),
-                        ctxPacket
-                    )
-                );
+                const std::uint32_t u32GroupLastIntervalIndex =
+                    ((u32GroupLastPacket - 1U) / prmRound.u32PacketsPerInterval()) + 1U;
+                const std::uint32_t u32FastGroupKeyIndex =
+                    prmRound.u32FastGroupKeyIndex(u32GroupLastIntervalIndex);
+                const TeslaAuthenticationDetails varAuthentication =
+                    stgStrategy.authCreateAuthenticationDetailsForKeys(
+                        grpInput,
+                        vecPacketDataKeys,
+                        ctxSender.keyChain().digDataKey(u32FastGroupKeyIndex));
+                const ImprovedAuthenticationDetails& detAuthentication =
+                    std::get<ImprovedAuthenticationDetails>(varAuthentication);
+                std::vector<protocol::BinaryBlock> vecTau;
+                vecTau.reserve(detAuthentication.vecSamdTau().size());
+                for (const crypto::Digest& digTau : detAuthentication.vecSamdTau())
+                {
+                    vecTau.push_back(arrMapDigest(digTau));
+                }
+
+                optGroupDetails.emplace(std::move(vecTau),
+                                        arrMapDigest(detAuthentication.optFastGroupTag().value()));
             }
 
-            u32GroupFirstPacket = u32GroupLastPacket + 1U;
+            intDatagrams.vecDatagrams.push_back(protocol::UdpAuthenticationPacketCodec::vecEncode(
+                protocol::UdpAuthenticationPacket(protocol::UdpDataPacket(
+                    ctxSender.matMaterial().u64ChainId(),
+                    u32IntervalIndex,
+                    u32PacketIndex,
+                    arrWorkloadMessage(varWorkload, u32PacketIndex),
+                    optDisclosureForPacket(ctxSender,
+                                           u32IntervalIndex,
+                                           u32PacketIndex,
+                                           u32FirstPacketIndex),
+                    protocol::ImprovedUdpAuthenticationDetails(std::move(optGroupDetails)))),
+                ctxPacket));
         }
     }
 
-    void validateScheduling(
-        const AuthenticationRoundParameters& prmRound,
-        const std::vector<IntervalDatagrams>& vecIntervals,
-        std::chrono::nanoseconds durWorstGeneration
-    ) const
+    void validateScheduling(const AuthenticationRoundParameters& prmRound,
+                            const std::vector<IntervalDatagrams>& vecIntervals,
+                            std::chrono::nanoseconds durWorstGeneration) const
     {
         const std::chrono::nanoseconds durInterval =
             std::chrono::milliseconds(prmRound.u32IntervalMilliseconds());

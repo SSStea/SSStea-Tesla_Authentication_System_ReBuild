@@ -41,7 +41,8 @@ enum class ImprovedVerificationPath
 {
     FastGroupPass,
     KsRsFallback,
-    IncompleteGroupTags
+    IncompleteGroupTags,
+    PendingDataKeys
 };
 
 /** @brief 保存改进TESLA模式的验证路径和位置级判定结果。 */

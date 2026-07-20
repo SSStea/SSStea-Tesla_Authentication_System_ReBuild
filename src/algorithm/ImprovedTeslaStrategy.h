@@ -5,6 +5,8 @@
 #include "crypto/CryptoProvider.h"
 
 #include <cstddef>
+#include <optional>
+#include <vector>
 
 namespace tesla::core
 {
@@ -14,6 +16,8 @@ namespace tesla::core
 class ImprovedTeslaStrategy final : public TeslaStrategy
 {
 public:
+    using PacketDataKeySlot = std::optional<crypto::Digest>;
+
     /**
      * @brief 创建绑定固定KS+RS参数的改进TESLA策略。
      * @param crpProvider 生命周期必须覆盖本策略的密码提供者。
@@ -34,6 +38,12 @@ public:
         const crypto::Digest& digDataKey
     ) const override;
 
+    TeslaAuthenticationDetails authCreateAuthenticationDetailsForKeys(
+        const AuthenticationGroupInput& grpInput,
+        const std::vector<crypto::Digest>& vecPacketDataKeys,
+        const crypto::Digest& digFastGroupDataKey
+    ) const;
+
     /** @copydoc TeslaStrategy::vfyVerify() */
     TeslaVerificationResult vfyVerify(
         const AuthenticationGroupInput& grpInput,
@@ -43,10 +53,19 @@ public:
         VerificationMeasurementHandler fnMeasurementHandler = {}
     ) const override;
 
+    TeslaVerificationResult vfyVerifyForKeys(
+        const AuthenticationGroupInput& grpInput,
+        const TeslaAuthenticationDetails& varReceivedDetails,
+        const std::vector<PacketDataKeySlot>& vecPacketDataKeys,
+        const crypto::Digest& digFastGroupDataKey,
+        metrics::VerificationPerformanceSampler* pPerformanceSampler = nullptr,
+        VerificationMeasurementHandler fnMeasurementHandler = {}
+    ) const;
+
 private:
     std::vector<std::optional<crypto::Digest>> vecComputePacketMacSlots(
         const AuthenticationGroupInput& grpInput,
-        const crypto::Digest& digDataKey
+        const std::vector<PacketDataKeySlot>& vecPacketDataKeys
     ) const;
 
     const crypto::CryptoProvider& m_crpProvider;
