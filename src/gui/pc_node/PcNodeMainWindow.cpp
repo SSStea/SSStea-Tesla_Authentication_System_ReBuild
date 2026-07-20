@@ -61,7 +61,7 @@ PcNodeMainWindow::PcNodeMainWindow(
     m_pAuthenticationMonitor = new tesla::gui::AuthenticationMonitorWidget(
         pTabs
     );
-    pTabs->addTab(m_pAuthenticationMonitor, QStringLiteral("报文与异常"));
+    pTabs->addTab(m_pAuthenticationMonitor, QStringLiteral("报文与展示"));
     m_pKeyChainWidget = new PcLocalKeyChainWidget(pTabs);
     pTabs->addTab(m_pKeyChainWidget, QStringLiteral("密钥链"));
     m_pMatrixWidget = new PcMatrixLocationWidget(pTabs);

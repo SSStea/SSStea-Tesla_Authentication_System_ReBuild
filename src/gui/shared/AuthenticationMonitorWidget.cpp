@@ -9,7 +9,6 @@
 #include <QDateTime>
 #include <QFile>
 #include <QFileDialog>
-#include <QGridLayout>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
@@ -22,7 +21,6 @@
 #include <QMessageBox>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
-#include <QTabWidget>
 #include <QTableView>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -171,11 +169,10 @@ QString strSource(PacketSourceType typeSource)
     return QStringLiteral("未知");
 }
 
-bool bIsReplay(AuthenticationFailureType typeFailure)
+bool bIsMissingFailure(AuthenticationFailureType typeFailure)
 {
-    return typeFailure == AuthenticationFailureType::ReplayDuplicate
-        || typeFailure == AuthenticationFailureType::ReplayLate
-        || typeFailure == AuthenticationFailureType::ReplayExpiredChain;
+    return typeFailure == AuthenticationFailureType::MissingPacket
+        || typeFailure == AuthenticationFailureType::UnverifiableMissingBaseline;
 }
 
 class PacketTableModel final : public QAbstractTableModel
@@ -188,12 +185,12 @@ public:
 
     int rowCount(const QModelIndex& = QModelIndex()) const override
     {
-        return static_cast<int>(m_vecPackets.size());
+        return static_cast<int>(m_vecPackets.size() + m_vecStandaloneFailures.size());
     }
 
     int columnCount(const QModelIndex& = QModelIndex()) const override
     {
-        return 13;
+        return 6;
     }
 
     QVariant headerData(
@@ -206,10 +203,8 @@ public:
         {
             return {};
         }
-        static const std::array<const char*, 13> HEADERS{
-            "时间", "Sender", "Chain ID", "方向", "对端/源IP", "来源",
-            "类型", "报文编号", "间隔", "密钥编号", "长度", "MAC/标签",
-            "结果"
+        static const std::array<const char*, 6> HEADERS{
+            "时间", "方向", "Sender", "密钥编号", "报文长度", "结果"
         };
         return QString::fromUtf8(HEADERS.at(static_cast<std::size_t>(nSection)));
     }
@@ -222,9 +217,53 @@ public:
         {
             return {};
         }
-        const auto& detPacket = m_vecPackets.at(
-            static_cast<std::size_t>(idxIndex.row())
+        const PacketFailureControlDetails* pFailure = pStandaloneFailure(
+            idxIndex.row()
         );
+        if (pFailure != nullptr)
+        {
+            if (nRole == Qt::UserRole)
+            {
+                return QVariant::fromValue<qulonglong>(pFailure->u64EventId());
+            }
+            if (nRole == Qt::BackgroundRole)
+            {
+                return QColor(255, 226, 226);
+            }
+            if (nRole != Qt::DisplayRole)
+            {
+                return {};
+            }
+
+            switch (idxIndex.column())
+            {
+            case 0:
+                return strTime(pFailure->u64TimestampMilliseconds());
+            case 1:
+                return QStringLiteral("RX");
+            case 2:
+                return QString::fromStdString(pFailure->strSenderId());
+            case 3:
+                return QStringLiteral("K%1").arg(pFailure->u32IntervalIndex());
+            case 4:
+                return QStringLiteral("—");
+            case 5:
+                return bIsMissingFailure(pFailure->typeFailure())
+                    ? QStringLiteral("丢包")
+                    : QStringLiteral("MAC/分组校验失败");
+            default:
+                return {};
+            }
+        }
+
+        const PacketObservationControlDetails* pPacket = this->pPacket(
+            idxIndex.row()
+        );
+        if (pPacket == nullptr)
+        {
+            return {};
+        }
+        const PacketObservationControlDetails& detPacket = *pPacket;
         if (nRole == Qt::UserRole)
         {
             return QVariant::fromValue<qulonglong>(detPacket.u64EventId());
@@ -246,29 +285,11 @@ public:
         case 0:
             return strTime(detPacket.u64TimestampMilliseconds());
         case 1:
-            return QString::fromStdString(detPacket.strSenderId());
-        case 2:
-            return QString::number(detPacket.u64ChainId());
-        case 3:
             return detPacket.dirDirection() == PacketObservationDirection::Tx
                 ? QStringLiteral("TX") : QStringLiteral("RX");
-        case 4:
-            return QString::fromStdString(
-                detPacket.strActualSourceIp().empty()
-                    ? detPacket.strPeer()
-                    : detPacket.strActualSourceIp()
-            );
-        case 5:
-            return strSource(detPacket.typeSource());
-        case 6:
-            return std::holds_alternative<DisclosurePacketObservationDetails>(
-                detPacket.varPayloadDetails()
-            ) ? QStringLiteral("DISCLOSE") : QStringLiteral("DATA");
-        case 7:
-            return QString::number(detPacket.u32PacketIndex());
-        case 8:
-            return QString::number(detPacket.u32IntervalIndex());
-        case 9:
+        case 2:
+            return QString::fromStdString(detPacket.strSenderId());
+        case 3:
         {
             const std::uint32_t u32DisclosedKeyIndex =
                 detPacket.u32IntervalIndex() > detPacket.u32DisclosureDelay()
@@ -290,32 +311,72 @@ public:
                     .arg(u32DisclosedKeyIndex)
                 : QStringLiteral("K%1").arg(detPacket.u32IntervalIndex());
         }
-        case 10:
+        case 4:
             return QStringLiteral("%1 B").arg(static_cast<qulonglong>(
                 detPacket.vecRawDatagram().size()
             ));
-        case 11:
-            return detPacket.modeAuthentication()
-                == UdpAuthenticationMode::Native
-                ? QStringLiteral("MAC") : QStringLiteral("τ/组标签");
-        case 12:
+        case 5:
+        {
+            const auto itrFailures = m_mapPacketFailures.find(
+                detPacket.u64EventId()
+            );
+            if (itrFailures != m_mapPacketFailures.end())
+            {
+                return std::any_of(
+                    itrFailures->second.begin(),
+                    itrFailures->second.end(),
+                    [](AuthenticationFailureType typeFailure)
+                    {
+                        return bIsMissingFailure(typeFailure);
+                    }
+                ) ? QStringLiteral("丢包")
+                  : QStringLiteral("MAC/分组校验失败");
+            }
             return strPacketStatus(detPacket.statusAuthentication());
+        }
         default:
             return {};
         }
     }
 
-    void setPackets(std::vector<PacketObservationControlDetails> vecPackets)
+    void setRecords(
+        std::vector<PacketObservationControlDetails> vecPackets,
+        const std::vector<PacketFailureControlDetails>& vecFailures
+    )
     {
         beginResetModel();
         m_vecPackets = std::move(vecPackets);
+        m_vecStandaloneFailures.clear();
+        m_mapPacketFailures.clear();
+        for (const PacketFailureControlDetails& detFailure : vecFailures)
+        {
+            if (detFailure.u64PacketEventId() == 0)
+            {
+                m_vecStandaloneFailures.push_back(detFailure);
+                continue;
+            }
+
+            m_mapPacketFailures[detFailure.u64PacketEventId()].push_back(
+                detFailure.typeFailure()
+            );
+        }
         endResetModel();
     }
 
     const PacketObservationControlDetails* pPacket(int nRow) const
     {
-        return nRow >= 0 && nRow < rowCount()
+        return nRow >= 0
+            && nRow < static_cast<int>(m_vecPackets.size())
             ? &m_vecPackets.at(static_cast<std::size_t>(nRow))
+            : nullptr;
+    }
+
+    const PacketFailureControlDetails* pStandaloneFailure(int nRow) const
+    {
+        const int nFailureRow = nRow - static_cast<int>(m_vecPackets.size());
+        return nFailureRow >= 0
+            && nFailureRow < static_cast<int>(m_vecStandaloneFailures.size())
+            ? &m_vecStandaloneFailures.at(static_cast<std::size_t>(nFailureRow))
             : nullptr;
     }
 
@@ -333,118 +394,16 @@ public:
 
 private:
     std::vector<PacketObservationControlDetails> m_vecPackets;
-};
-
-class FailureTableModel final : public QAbstractTableModel
-{
-public:
-    explicit FailureTableModel(QObject* pParent = nullptr)
-        : QAbstractTableModel(pParent)
-    {
-    }
-
-    int rowCount(const QModelIndex& = QModelIndex()) const override
-    {
-        return static_cast<int>(m_vecFailures.size());
-    }
-
-    int columnCount(const QModelIndex& = QModelIndex()) const override
-    {
-        return 8;
-    }
-
-    QVariant headerData(int nSection, Qt::Orientation ori, int nRole) const override
-    {
-        if (ori != Qt::Horizontal || nRole != Qt::DisplayRole)
-        {
-            return {};
-        }
-        static const std::array<const char*, 8> HEADERS{
-            "时间", "Sender", "Chain ID", "报文编号", "分组", "异常类型",
-            "失败摘要", "实际源IP"
-        };
-        return QString::fromUtf8(HEADERS.at(static_cast<std::size_t>(nSection)));
-    }
-
-    QVariant data(const QModelIndex& idxIndex, int nRole) const override
-    {
-        if (!idxIndex.isValid()
-            || idxIndex.row() < 0
-            || idxIndex.row() >= rowCount())
-        {
-            return {};
-        }
-        const auto& detFailure = m_vecFailures.at(
-            static_cast<std::size_t>(idxIndex.row())
-        );
-        if (nRole == Qt::BackgroundRole)
-        {
-            return detFailure.sevSeverity() == ObservationSeverity::Error
-                ? QColor(255, 226, 226) : QColor(255, 244, 204);
-        }
-        if (nRole != Qt::DisplayRole)
-        {
-            return {};
-        }
-        switch (idxIndex.column())
-        {
-        case 0:
-            return strTime(detFailure.u64TimestampMilliseconds());
-        case 1:
-            return QString::fromStdString(detFailure.strSenderId());
-        case 2:
-            return QString::number(detFailure.u64ChainId());
-        case 3:
-            return QString::number(detFailure.u32PacketIndex());
-        case 4:
-            return detFailure.optGroupIndex().has_value()
-                ? QString::number(detFailure.optGroupIndex().value())
-                : QStringLiteral("—");
-        case 5:
-            return strFailureType(detFailure.typeFailure());
-        case 6:
-            return QString::fromStdString(detFailure.strReason());
-        case 7:
-            return detFailure.strActualSourceIp().empty()
-                ? QStringLiteral("—")
-                : QString::fromStdString(detFailure.strActualSourceIp());
-        default:
-            return {};
-        }
-    }
-
-    void setFailures(std::vector<PacketFailureControlDetails> vecFailures)
-    {
-        beginResetModel();
-        m_vecFailures = std::move(vecFailures);
-        endResetModel();
-    }
-
-    const PacketFailureControlDetails* pFailure(int nRow) const
-    {
-        return nRow >= 0 && nRow < rowCount()
-            ? &m_vecFailures.at(static_cast<std::size_t>(nRow))
-            : nullptr;
-    }
-
-    const std::vector<PacketFailureControlDetails>& vecFailures() const
-    {
-        return m_vecFailures;
-    }
-
-private:
-    std::vector<PacketFailureControlDetails> m_vecFailures;
+    std::vector<PacketFailureControlDetails>     m_vecStandaloneFailures;
+    std::map<std::uint64_t, std::vector<AuthenticationFailureType>>
+        m_mapPacketFailures;
 };
 
 enum class QuickFilter
 {
     All,
     Abnormal,
-    Mac,
-    FastGroup,
-    Tau,
-    Replay,
-    Protocol,
+    AuthenticationFailed,
     Missing
 };
 
@@ -479,19 +438,11 @@ public:
 
     void setQuery(
         QString strSender,
-        QString strChain,
-        QString strPacket,
-        QString strInterval,
-        QString strSource,
-        QString strStatus
+        QString strPacket
     )
     {
         m_strSender = strSender.trimmed();
-        m_strChain = strChain.trimmed();
         m_strPacket = strPacket.trimmed();
-        m_strInterval = strInterval.trimmed();
-        m_strSource = strSource.trimmed();
-        m_strStatus = strStatus.trimmed();
         invalidateFilter();
     }
 
@@ -499,8 +450,39 @@ protected:
     bool filterAcceptsRow(int nSourceRow, const QModelIndex&) const override
     {
         const auto* pModel = static_cast<const PacketTableModel*>(sourceModel());
-        const auto* pPacket = pModel == nullptr
-            ? nullptr : pModel->pPacket(nSourceRow);
+        if (pModel == nullptr)
+        {
+            return false;
+        }
+
+        const PacketFailureControlDetails* pStandaloneFailure
+            = pModel->pStandaloneFailure(nSourceRow);
+        if (pStandaloneFailure != nullptr)
+        {
+            if (!m_strSender.isEmpty()
+                && QString::fromStdString(pStandaloneFailure->strSenderId())
+                    != m_strSender)
+            {
+                return false;
+            }
+            if (!m_strPacket.isEmpty()
+                && QString::number(pStandaloneFailure->u32PacketIndex())
+                    != m_strPacket)
+            {
+                return false;
+            }
+
+            return m_fltQuick == QuickFilter::All
+                || m_fltQuick == QuickFilter::Abnormal
+                || (m_fltQuick == QuickFilter::Missing
+                    && bIsMissingFailure(pStandaloneFailure->typeFailure()))
+                || (m_fltQuick == QuickFilter::AuthenticationFailed
+                    && !bIsMissingFailure(pStandaloneFailure->typeFailure()));
+        }
+
+        const PacketObservationControlDetails* pPacket = pModel->pPacket(
+            nSourceRow
+        );
         if (pPacket == nullptr)
         {
             return false;
@@ -511,32 +493,8 @@ protected:
         {
             return false;
         }
-        if (!m_strChain.isEmpty()
-            && QString::number(pPacket->u64ChainId()) != m_strChain)
-        {
-            return false;
-        }
         if (!m_strPacket.isEmpty()
             && QString::number(pPacket->u32PacketIndex()) != m_strPacket)
-        {
-            return false;
-        }
-        if (!m_strInterval.isEmpty()
-            && QString::number(pPacket->u32IntervalIndex()) != m_strInterval)
-        {
-            return false;
-        }
-        if (!m_strSource.isEmpty()
-            && !QString::fromStdString(pPacket->strActualSourceIp()).contains(
-                m_strSource,
-                Qt::CaseInsensitive
-            ))
-        {
-            return false;
-        }
-        if (!m_strStatus.isEmpty()
-            && m_strStatus != QStringLiteral("全部")
-            && strPacketStatus(pPacket->statusAuthentication()) != m_strStatus)
         {
             return false;
         }
@@ -559,35 +517,9 @@ protected:
             itFailures->second.end(),
             [this](AuthenticationFailureType typeFailure)
             {
-                switch (m_fltQuick)
-                {
-                case QuickFilter::Mac:
-                    return typeFailure == AuthenticationFailureType::MacFailed
-                        || typeFailure
-                            == AuthenticationFailureType::TamperedVariant;
-                case QuickFilter::FastGroup:
-                    return typeFailure
-                        == AuthenticationFailureType::FastGroupFailed;
-                case QuickFilter::Tau:
-                    return typeFailure
-                        == AuthenticationFailureType::GroupTauFailed;
-                case QuickFilter::Replay:
-                    return bIsReplay(typeFailure);
-                case QuickFilter::Protocol:
-                    return typeFailure
-                            == AuthenticationFailureType::ProtocolError
-                        || typeFailure
-                            == AuthenticationFailureType::UnknownContext;
-                case QuickFilter::Missing:
-                    return typeFailure
-                            == AuthenticationFailureType::MissingPacket
-                        || typeFailure
-                            == AuthenticationFailureType::IncompleteGroupTags
-                        || typeFailure
-                            == AuthenticationFailureType::UnverifiableMissingBaseline;
-                default:
-                    return true;
-                }
+                return m_fltQuick == QuickFilter::Missing
+                    ? bIsMissingFailure(typeFailure)
+                    : !bIsMissingFailure(typeFailure);
             }
         );
     }
@@ -596,11 +528,7 @@ private:
     std::map<std::uint64_t, std::vector<AuthenticationFailureType>> m_mapFailures;
     QuickFilter m_fltQuick{QuickFilter::All};
     QString m_strSender;
-    QString m_strChain;
     QString m_strPacket;
-    QString m_strInterval;
-    QString m_strSource;
-    QString m_strStatus;
 };
 
 QString strPacketDetails(const PacketObservationControlDetails& detPacket)
@@ -737,35 +665,25 @@ public:
     explicit Impl(AuthenticationMonitorWidget* pOwner)
         : m_pOwner(pOwner),
           m_pPacketModel(new PacketTableModel(pOwner)),
-          m_pFailureModel(new FailureTableModel(pOwner)),
           m_pProxyModel(new PacketFilterProxyModel(pOwner)),
-          m_pTabs(new QTabWidget(pOwner)),
           m_pPacketTable(new QTableView(pOwner)),
-          m_pFailureTable(new QTableView(pOwner)),
-          m_pLogTable(new QTableView(pOwner)),
           m_pDetailEdit(new QTextEdit(pOwner)),
           m_pSenderEdit(new QLineEdit(pOwner)),
-          m_pChainEdit(new QLineEdit(pOwner)),
           m_pPacketEdit(new QLineEdit(pOwner)),
-          m_pIntervalEdit(new QLineEdit(pOwner)),
-          m_pSourceEdit(new QLineEdit(pOwner)),
-          m_pStatusCombo(new QComboBox(pOwner)),
+          m_pAbnormalTypeCombo(new QComboBox(pOwner)),
           m_pDosLabel(new QLabel(pOwner))
     {
         m_pProxyModel->setSourceModel(m_pPacketModel);
         m_pProxyModel->setDynamicSortFilter(true);
         m_pPacketTable->setModel(m_pProxyModel);
-        m_pFailureTable->setModel(m_pFailureModel);
-        m_pLogTable->setModel(m_pFailureModel);
         m_pDetailEdit->setReadOnly(true);
         m_pDetailEdit->setLineWrapMode(QTextEdit::NoWrap);
-        m_pStatusCombo->addItems({
-            QStringLiteral("全部"),
-            QStringLiteral("PASS"),
-            QStringLiteral("PENDING"),
-            QStringLiteral("FAIL"),
-            QStringLiteral("GENERATED")
+        m_pAbnormalTypeCombo->addItems({
+            QStringLiteral("全部异常"),
+            QStringLiteral("MAC/分组校验失败"),
+            QStringLiteral("丢包")
         });
+        m_pAbnormalTypeCombo->setEnabled(false);
         createPages();
         connectActions();
     }
@@ -779,9 +697,8 @@ public:
         m_vecPackets = vecPackets;
         m_vecFailures = vecFailures;
         m_vecDosSummaries = vecDosSummaries;
-        m_pPacketModel->setPackets(std::move(vecPackets));
-        m_pFailureModel->setFailures(std::move(vecFailures));
-        m_pProxyModel->setFailures(m_pFailureModel->vecFailures());
+        m_pPacketModel->setRecords(std::move(vecPackets), vecFailures);
+        m_pProxyModel->setFailures(vecFailures);
         refreshQuickButtonCounts();
 
         if (vecDosSummaries.empty())
@@ -1205,45 +1122,14 @@ private:
     void createPages()
     {
         QVBoxLayout* pRootLayout = new QVBoxLayout(m_pOwner);
-        pRootLayout->addWidget(m_pTabs);
-
-        QWidget* pPacketPage = new QWidget(m_pTabs);
+        QWidget* pPacketPage = new QWidget(m_pOwner);
         QVBoxLayout* pPacketLayout = new QVBoxLayout(pPacketPage);
-        QHBoxLayout* pExportLayout = new QHBoxLayout();
-        QPushButton* pExportCsvButton = new QPushButton(
-            QStringLiteral("导出本节点CSV"),
-            pPacketPage
-        );
-        QPushButton* pExportJsonButton = new QPushButton(
-            QStringLiteral("导出本节点JSON"),
-            pPacketPage
-        );
-        QPushButton* pExportRoundCsvButton = new QPushButton(
-            QStringLiteral("导出逐轮CSV"),
-            pPacketPage
-        );
-        QPushButton* pExportRoundJsonButton = new QPushButton(
-            QStringLiteral("导出逐轮JSON"),
-            pPacketPage
-        );
-        pExportLayout->addWidget(pExportCsvButton);
-        pExportLayout->addWidget(pExportJsonButton);
-        pExportLayout->addWidget(pExportRoundCsvButton);
-        pExportLayout->addWidget(pExportRoundJsonButton);
-        pExportLayout->addStretch();
-        pPacketLayout->addLayout(pExportLayout);
-        QGridLayout* pFilters = new QGridLayout();
+        QHBoxLayout* pQuickFilterLayout = new QHBoxLayout();
         m_pQuickButtons = new QButtonGroup(m_pOwner);
         m_pQuickButtons->setExclusive(true);
-        static const std::array<std::pair<const char*, QuickFilter>, 8> FILTERS{
+        static const std::array<std::pair<const char*, QuickFilter>, 2> FILTERS{
             std::pair{"全部", QuickFilter::All},
-            std::pair{"仅看异常", QuickFilter::Abnormal},
-            std::pair{"MAC失败", QuickFilter::Mac},
-            std::pair{"快速组失败", QuickFilter::FastGroup},
-            std::pair{"τ失败", QuickFilter::Tau},
-            std::pair{"重放", QuickFilter::Replay},
-            std::pair{"协议错误", QuickFilter::Protocol},
-            std::pair{"丢失", QuickFilter::Missing}
+            std::pair{"仅看异常", QuickFilter::Abnormal}
         };
         for (std::size_t nIndex = 0; nIndex < FILTERS.size(); ++nIndex)
         {
@@ -1252,33 +1138,52 @@ private:
                 pPacketPage
             );
             pButton->setCheckable(true);
-            if (nIndex == 1U)
-            {
-                pButton->setObjectName(QStringLiteral("abnormalFilterButton"));
-            }
+            pButton->setMinimumWidth(120);
+            pButton->setStyleSheet(QStringLiteral(
+                "QPushButton {"
+                "  min-height: 28px; padding: 2px 16px;"
+                "  border: 1px solid #cbd5e1; border-radius: 5px;"
+                "  background: #ffffff; color: #334155;"
+                "}"
+                "QPushButton:hover {"
+                "  border-color: #60a5fa; background: #eff6ff;"
+                "}"
+                "QPushButton:checked {"
+                "  border-color: #2563eb; background: #2563eb; color: #ffffff;"
+                "}"
+            ));
             m_pQuickButtons->addButton(pButton, static_cast<int>(nIndex));
             m_vecQuickButtons.push_back(pButton);
-            pFilters->addWidget(pButton, 0, static_cast<int>(nIndex));
+            pQuickFilterLayout->addWidget(pButton);
         }
+        pQuickFilterLayout->addSpacing(12);
+        pQuickFilterLayout->addWidget(
+            new QLabel(QStringLiteral("异常类型"), pPacketPage)
+        );
+        m_pAbnormalTypeCombo->setFixedWidth(190);
+        pQuickFilterLayout->addWidget(m_pAbnormalTypeCombo);
+        pQuickFilterLayout->addStretch();
         m_vecQuickButtons.front()->setChecked(true);
+        pPacketLayout->addLayout(pQuickFilterLayout);
 
-        pFilters->addWidget(new QLabel(QStringLiteral("Sender"), pPacketPage), 1, 0);
-        pFilters->addWidget(m_pSenderEdit, 1, 1);
-        pFilters->addWidget(new QLabel(QStringLiteral("Chain ID"), pPacketPage), 1, 2);
-        pFilters->addWidget(m_pChainEdit, 1, 3);
-        pFilters->addWidget(new QLabel(QStringLiteral("报文编号"), pPacketPage), 1, 4);
-        pFilters->addWidget(m_pPacketEdit, 1, 5);
-        pFilters->addWidget(new QLabel(QStringLiteral("间隔编号"), pPacketPage), 1, 6);
-        pFilters->addWidget(m_pIntervalEdit, 1, 7);
-        pFilters->addWidget(new QLabel(QStringLiteral("实际源IP"), pPacketPage), 2, 0);
-        pFilters->addWidget(m_pSourceEdit, 2, 1, 1, 2);
-        pFilters->addWidget(new QLabel(QStringLiteral("结果状态"), pPacketPage), 2, 3);
-        pFilters->addWidget(m_pStatusCombo, 2, 4);
+        QHBoxLayout* pQueryLayout = new QHBoxLayout();
+        pQueryLayout->setSpacing(8);
+        pQueryLayout->addWidget(new QLabel(QStringLiteral("Sender"), pPacketPage));
+        m_pSenderEdit->setFixedWidth(180);
+        pQueryLayout->addWidget(m_pSenderEdit);
+        pQueryLayout->addSpacing(20);
+        pQueryLayout->addWidget(new QLabel(QStringLiteral("报文编号"), pPacketPage));
+        m_pPacketEdit->setFixedWidth(150);
+        pQueryLayout->addWidget(m_pPacketEdit);
         QPushButton* pQueryButton = new QPushButton(QStringLiteral("查询"), pPacketPage);
         QPushButton* pClearButton = new QPushButton(QStringLiteral("清除筛选"), pPacketPage);
-        pFilters->addWidget(pQueryButton, 2, 6);
-        pFilters->addWidget(pClearButton, 2, 7);
-        pPacketLayout->addLayout(pFilters);
+        pQueryButton->setFixedWidth(72);
+        pClearButton->setFixedWidth(96);
+        pQueryLayout->addSpacing(12);
+        pQueryLayout->addWidget(pQueryButton);
+        pQueryLayout->addWidget(pClearButton);
+        pQueryLayout->addStretch();
+        pPacketLayout->addLayout(pQueryLayout);
         pPacketLayout->addWidget(m_pDosLabel);
 
         QSplitter* pSplitter = new QSplitter(Qt::Vertical, pPacketPage);
@@ -1287,39 +1192,14 @@ private:
         pSplitter->setStretchFactor(0, 3);
         pSplitter->setStretchFactor(1, 2);
         pPacketLayout->addWidget(pSplitter, 1);
-        m_pTabs->addTab(pPacketPage, QStringLiteral("报文列表与详情"));
-
-        QWidget* pFailurePage = new QWidget(m_pTabs);
-        QVBoxLayout* pFailureLayout = new QVBoxLayout(pFailurePage);
-        QLabel* pHint = new QLabel(
-            QStringLiteral("双击异常可定位对应候选报文；缺失报文打开预期槽位详情。"),
-            pFailurePage
-        );
-        pFailureLayout->addWidget(pHint);
-        pFailureLayout->addWidget(m_pFailureTable, 1);
-        m_pTabs->addTab(pFailurePage, QStringLiteral("异常记录"));
-
-        QWidget* pLogPage = new QWidget(m_pTabs);
-        QVBoxLayout* pLogLayout = new QVBoxLayout(pLogPage);
-        pLogLayout->addWidget(new QLabel(
-            QStringLiteral(
-                "结构化失败日志只显示摘要；完整Message、认证字段和原始字节请双击查看。"
-            ),
-            pLogPage
-        ));
-        pLogLayout->addWidget(m_pLogTable, 1);
-        m_pTabs->addTab(pLogPage, QStringLiteral("结构化日志"));
+        pRootLayout->addWidget(pPacketPage);
 
         m_pPacketTable->setSelectionBehavior(QAbstractItemView::SelectRows);
         m_pPacketTable->setSelectionMode(QAbstractItemView::SingleSelection);
         m_pPacketTable->setSortingEnabled(true);
-        m_pPacketTable->horizontalHeader()->setStretchLastSection(true);
-        m_pFailureTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-        m_pFailureTable->setSelectionMode(QAbstractItemView::SingleSelection);
-        m_pFailureTable->horizontalHeader()->setStretchLastSection(true);
-        m_pLogTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-        m_pLogTable->setSelectionMode(QAbstractItemView::SingleSelection);
-        m_pLogTable->horizontalHeader()->setStretchLastSection(true);
+        m_pPacketTable->horizontalHeader()->setSectionResizeMode(
+            QHeaderView::Stretch
+        );
 
         QObject::connect(pQueryButton, &QPushButton::clicked, m_pOwner, [this]()
         {
@@ -1329,42 +1209,6 @@ private:
         {
             clearFilters();
         });
-        QObject::connect(
-            pExportCsvButton,
-            &QPushButton::clicked,
-            m_pOwner,
-            [this]()
-            {
-                exportSnapshots(false);
-            }
-        );
-        QObject::connect(
-            pExportJsonButton,
-            &QPushButton::clicked,
-            m_pOwner,
-            [this]()
-            {
-                exportSnapshots(true);
-            }
-        );
-        QObject::connect(
-            pExportRoundCsvButton,
-            &QPushButton::clicked,
-            m_pOwner,
-            [this]()
-            {
-                exportRoundArchives(false);
-            }
-        );
-        QObject::connect(
-            pExportRoundJsonButton,
-            &QPushButton::clicked,
-            m_pOwner,
-            [this]()
-            {
-                exportRoundArchives(true);
-            }
-        );
     }
 
     void connectActions()
@@ -1375,9 +1219,24 @@ private:
             m_pOwner,
             [this](int nId)
             {
+                const bool bOnlyAbnormal = nId == 1;
+                m_pAbnormalTypeCombo->setEnabled(bOnlyAbnormal);
                 m_pProxyModel->setQuickFilter(
-                    static_cast<QuickFilter>(nId)
+                    bOnlyAbnormal
+                        ? fltSelectedAbnormalFilter()
+                        : QuickFilter::All
                 );
+            }
+        );
+        QObject::connect(
+            m_pAbnormalTypeCombo,
+            &QComboBox::currentIndexChanged,
+            m_pOwner,
+            [this]()
+            {
+                m_vecQuickButtons[1]->setChecked(true);
+                m_pAbnormalTypeCombo->setEnabled(true);
+                m_pProxyModel->setQuickFilter(fltSelectedAbnormalFilter());
             }
         );
         QObject::connect(
@@ -1389,28 +1248,35 @@ private:
                 const QModelIndex idxSource = m_pProxyModel->mapToSource(
                     idxCurrent
                 );
-                const auto* pPacket = m_pPacketModel->pPacket(idxSource.row());
-                m_pDetailEdit->setPlainText(
-                    pPacket == nullptr ? QString() : strPacketDetails(*pPacket)
-                );
-            }
-        );
-        QObject::connect(
-            m_pFailureTable,
-            &QTableView::doubleClicked,
-            m_pOwner,
-            [this](const QModelIndex& idxFailure)
-            {
-                jumpToFailure(idxFailure.row());
-            }
-        );
-        QObject::connect(
-            m_pLogTable,
-            &QTableView::doubleClicked,
-            m_pOwner,
-            [this](const QModelIndex& idxFailure)
-            {
-                jumpToFailure(idxFailure.row());
+                const PacketFailureControlDetails* pStandaloneFailure
+                    = m_pPacketModel->pStandaloneFailure(idxSource.row());
+                if (pStandaloneFailure != nullptr)
+                {
+                    m_pDetailEdit->setPlainText(
+                        strFailureDetails(*pStandaloneFailure)
+                    );
+                    return;
+                }
+
+                const PacketObservationControlDetails* pPacket
+                    = m_pPacketModel->pPacket(idxSource.row());
+                if (pPacket == nullptr)
+                {
+                    m_pDetailEdit->clear();
+                    return;
+                }
+
+                QString strDetails = strPacketDetails(*pPacket);
+                for (const PacketFailureControlDetails& detFailure
+                    : m_vecFailures)
+                {
+                    if (detFailure.u64PacketEventId() == pPacket->u64EventId())
+                    {
+                        strDetails += QStringLiteral("\n\n--- 关联异常 ---\n")
+                            + strFailureDetails(detFailure);
+                    }
+                }
+                m_pDetailEdit->setPlainText(strDetails);
             }
         );
     }
@@ -1419,136 +1285,70 @@ private:
     {
         m_pProxyModel->setQuery(
             m_pSenderEdit->text(),
-            m_pChainEdit->text(),
-            m_pPacketEdit->text(),
-            m_pIntervalEdit->text(),
-            m_pSourceEdit->text(),
-            m_pStatusCombo->currentText()
+            m_pPacketEdit->text()
         );
         refreshQuickButtonCounts();
+    }
+
+    QuickFilter fltSelectedAbnormalFilter() const noexcept
+    {
+        switch (m_pAbnormalTypeCombo->currentIndex())
+        {
+        case 1:
+            return QuickFilter::AuthenticationFailed;
+        case 2:
+            return QuickFilter::Missing;
+        default:
+            return QuickFilter::Abnormal;
+        }
     }
 
     void clearFilters()
     {
         for (QLineEdit* pEdit : {
                 m_pSenderEdit,
-                m_pChainEdit,
-                m_pPacketEdit,
-                m_pIntervalEdit,
-                m_pSourceEdit
+                m_pPacketEdit
             })
         {
             pEdit->clear();
         }
-        m_pStatusCombo->setCurrentIndex(0);
+        m_pAbnormalTypeCombo->blockSignals(true);
+        m_pAbnormalTypeCombo->setCurrentIndex(0);
+        m_pAbnormalTypeCombo->blockSignals(false);
+        m_pAbnormalTypeCombo->setEnabled(false);
         m_vecQuickButtons.front()->setChecked(true);
         m_pProxyModel->setQuickFilter(QuickFilter::All);
         applyQuery();
     }
 
-    void jumpToFailure(int nFailureRow)
-    {
-        const auto* pFailure = m_pFailureModel->pFailure(nFailureRow);
-        if (pFailure == nullptr)
-        {
-            return;
-        }
-        clearFilters();
-        m_pTabs->setCurrentIndex(0);
-        if (pFailure->u64PacketEventId() == 0)
-        {
-            m_pPacketTable->clearSelection();
-            m_pDetailEdit->setPlainText(strFailureDetails(*pFailure));
-            return;
-        }
-
-        const int nSourceRow = m_pPacketModel->nRowForEventId(
-            pFailure->u64PacketEventId()
-        );
-        const QModelIndex idxProxy = m_pProxyModel->mapFromSource(
-            m_pPacketModel->index(nSourceRow, 0)
-        );
-        if (idxProxy.isValid())
-        {
-            m_pPacketTable->selectRow(idxProxy.row());
-            m_pPacketTable->scrollTo(idxProxy);
-            const auto* pPacket = m_pPacketModel->pPacket(nSourceRow);
-            m_pDetailEdit->setPlainText(
-                strPacketDetails(*pPacket)
-                + QStringLiteral("\n\n--- 关联异常 ---\n")
-                + strFailureDetails(*pFailure)
-            );
-        }
-        else
-        {
-            m_pDetailEdit->setPlainText(strFailureDetails(*pFailure));
-        }
-    }
-
     void refreshQuickButtonCounts()
     {
-        std::array<int, 8> arrCounts{};
+        std::array<int, 4> arrCounts{};
         arrCounts[0] = m_pPacketModel->rowCount();
-        for (const auto& detFailure : m_pFailureModel->vecFailures())
+        for (const PacketFailureControlDetails& detFailure : m_vecFailures)
         {
             if ((!m_pSenderEdit->text().trimmed().isEmpty()
                     && QString::fromStdString(detFailure.strSenderId())
                         != m_pSenderEdit->text().trimmed())
-                || (!m_pChainEdit->text().trimmed().isEmpty()
-                    && QString::number(detFailure.u64ChainId())
-                        != m_pChainEdit->text().trimmed())
                 || (!m_pPacketEdit->text().trimmed().isEmpty()
                     && QString::number(detFailure.u32PacketIndex())
-                        != m_pPacketEdit->text().trimmed())
-                || (!m_pIntervalEdit->text().trimmed().isEmpty()
-                    && QString::number(detFailure.u32IntervalIndex())
-                        != m_pIntervalEdit->text().trimmed())
-                || (!m_pSourceEdit->text().trimmed().isEmpty()
-                    && !QString::fromStdString(
-                        detFailure.strActualSourceIp()
-                    ).contains(
-                        m_pSourceEdit->text().trimmed(),
-                        Qt::CaseInsensitive
-                    )))
+                        != m_pPacketEdit->text().trimmed()))
             {
                 continue;
             }
 
-            ++arrCounts[1];
-            const auto typeFailure = detFailure.typeFailure();
-            if (typeFailure == AuthenticationFailureType::MacFailed
-                || typeFailure == AuthenticationFailureType::TamperedVariant)
-            {
-                ++arrCounts[2];
-            }
-            else if (typeFailure == AuthenticationFailureType::FastGroupFailed)
+            if (bIsMissingFailure(detFailure.typeFailure()))
             {
                 ++arrCounts[3];
             }
-            else if (typeFailure == AuthenticationFailureType::GroupTauFailed)
+            else
             {
-                ++arrCounts[4];
+                ++arrCounts[2];
             }
-            else if (bIsReplay(typeFailure))
-            {
-                ++arrCounts[5];
-            }
-            else if (typeFailure == AuthenticationFailureType::ProtocolError
-                || typeFailure == AuthenticationFailureType::UnknownContext)
-            {
-                ++arrCounts[6];
-            }
-            else if (typeFailure == AuthenticationFailureType::MissingPacket
-                || typeFailure == AuthenticationFailureType::IncompleteGroupTags
-                || typeFailure
-                    == AuthenticationFailureType::UnverifiableMissingBaseline)
-            {
-                ++arrCounts[7];
-            }
+            ++arrCounts[1];
         }
-        static const std::array<const char*, 8> NAMES{
-            "全部", "仅看异常", "MAC失败", "快速组失败", "τ失败", "重放",
-            "协议错误", "丢失"
+        static const std::array<const char*, 4> NAMES{
+            "全部", "仅看异常", "MAC/分组校验失败", "丢包"
         };
         for (std::size_t nIndex = 0; nIndex < m_vecQuickButtons.size(); ++nIndex)
         {
@@ -1558,26 +1358,31 @@ private:
                     .arg(arrCounts[nIndex])
             );
         }
+        m_pAbnormalTypeCombo->setItemText(
+            0,
+            QStringLiteral("全部异常(%1)").arg(arrCounts[1])
+        );
+        m_pAbnormalTypeCombo->setItemText(
+            1,
+            QStringLiteral("MAC/分组校验失败(%1)").arg(arrCounts[2])
+        );
+        m_pAbnormalTypeCombo->setItemText(
+            2,
+            QStringLiteral("丢包(%1)").arg(arrCounts[3])
+        );
     }
 
     AuthenticationMonitorWidget* m_pOwner;
     PacketTableModel*             m_pPacketModel;
-    FailureTableModel*            m_pFailureModel;
     PacketFilterProxyModel*       m_pProxyModel;
-    QTabWidget*                   m_pTabs;
     QTableView*                   m_pPacketTable;
-    QTableView*                   m_pFailureTable;
-    QTableView*                   m_pLogTable;
     QTextEdit*                    m_pDetailEdit;
     QLineEdit*                    m_pSenderEdit;
-    QLineEdit*                    m_pChainEdit;
     QLineEdit*                    m_pPacketEdit;
-    QLineEdit*                    m_pIntervalEdit;
-    QLineEdit*                    m_pSourceEdit;
-    QComboBox*                    m_pStatusCombo;
+    QComboBox*                    m_pAbnormalTypeCombo;
     QLabel*                       m_pDosLabel;
     QButtonGroup*                 m_pQuickButtons{nullptr};
-    std::vector<QPushButton*>     m_vecQuickButtons;
+    std::vector<QPushButton*> m_vecQuickButtons;
     std::vector<PacketObservationControlDetails> m_vecPackets;
     std::vector<PacketFailureControlDetails> m_vecFailures;
     std::vector<DosSummaryControlDetails> m_vecDosSummaries;

@@ -73,7 +73,7 @@ UavMonitorMainWindow::UavMonitorMainWindow(
     m_pAuthenticationMonitor = new tesla::gui::AuthenticationMonitorWidget(
         pTabs
     );
-    pTabs->addTab(m_pAuthenticationMonitor, QStringLiteral("报文与异常"));
+    pTabs->addTab(m_pAuthenticationMonitor, QStringLiteral("报文与展示"));
     m_ptrMetricsView = std::make_unique<AuthenticationMetricsView>(pTabs);
     pTabs->addTab(m_ptrMetricsView->pComputationPage(), QStringLiteral("计算"));
     pTabs->addTab(m_ptrMetricsView->pEnergyPage(), QStringLiteral("估算能耗"));
