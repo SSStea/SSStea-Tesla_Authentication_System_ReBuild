@@ -27,6 +27,35 @@
 namespace
 {
 constexpr std::size_t MAX_CHART_POINT_COUNT = 2000;
+constexpr qreal MAX_VISIBLE_ROUND_TICK_COUNT = 10.0;
+
+qreal dNiceRoundTickInterval(qreal dMaximumRound)
+{
+    const qreal dRawInterval = std::max<qreal>(
+        1.0,
+        std::ceil(dMaximumRound / MAX_VISIBLE_ROUND_TICK_COUNT)
+    );
+    const qreal dMagnitude = std::pow(
+        10.0,
+        std::floor(std::log10(dRawInterval))
+    );
+    const qreal dNormalizedInterval = dRawInterval / dMagnitude;
+
+    if (dNormalizedInterval <= 1.0)
+    {
+        return dMagnitude;
+    }
+    if (dNormalizedInterval <= 2.0)
+    {
+        return 2.0 * dMagnitude;
+    }
+    if (dNormalizedInterval <= 5.0)
+    {
+        return 5.0 * dMagnitude;
+    }
+
+    return 10.0 * dMagnitude;
+}
 
 QString strCsv(const QString& strValue)
 {
@@ -702,6 +731,20 @@ void AuthenticationMetricsView::updateAxes(
     qreal dMaximumY
 )
 {
-    pXAxis->setRange(0.0, std::max<qreal>(1.0, dMaximumX + 1.0));
+    pXAxis->setTickType(QValueAxis::TicksDynamic);
+    if (dMaximumX < 1.0)
+    {
+        pXAxis->setTickAnchor(0.0);
+        pXAxis->setTickInterval(1.0);
+        pXAxis->setRange(0.0, 1.0);
+    }
+    else
+    {
+        const qreal dMaximumRound = std::floor(dMaximumX);
+        pXAxis->setTickAnchor(1.0);
+        pXAxis->setTickInterval(dNiceRoundTickInterval(dMaximumRound));
+        pXAxis->setRange(0.5, dMaximumRound + 0.5);
+    }
+
     pYAxis->setRange(0.0, std::max<qreal>(1.0, dMaximumY * 1.10));
 }
