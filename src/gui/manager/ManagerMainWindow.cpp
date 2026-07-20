@@ -974,22 +974,12 @@ void ManagerMainWindow::validateAuthenticationInputs()
     const int nMinimumIntervalMilliseconds = nPacketsPerInterval * 2;
     const bool bIntervalValid =
         nIntervalMilliseconds >= nMinimumIntervalMilliseconds;
-    bool bPacketGroupingValid = true;
     bool bThresholdValid = true;
     if (!bIntervalValid)
     {
         listErrors.append(
             QStringLiteral("时间间隔至少为每间隔发包数的两倍；当前最少需要%1ms")
                 .arg(nMinimumIntervalMilliseconds)
-        );
-    }
-    if (bImproved && nPacketsPerInterval % nGroupSize != 0)
-    {
-        bPacketGroupingValid = false;
-        listErrors.append(
-            QStringLiteral("每间隔发包数必须是分组大小的整数倍；%1不能被%2整除")
-                .arg(nPacketsPerInterval)
-                .arg(nGroupSize)
         );
     }
     if (bImproved
@@ -1001,7 +991,7 @@ void ManagerMainWindow::validateAuthenticationInputs()
             QStringLiteral("检测阈值必须满足 1 <= 阈值 < 分组大小")
         );
     }
-    if (bImproved && bPacketGroupingValid && bThresholdValid)
+    if (bImproved && bThresholdValid)
     {
         try
         {
@@ -1060,9 +1050,9 @@ void ManagerMainWindow::validateAuthenticationInputs()
     fnSetInvalid(m_pIntervalSpin, !bIntervalValid);
     fnSetInvalid(
         m_pPacketsSpin,
-        !bIntervalValid || !bPacketGroupingValid
+        !bIntervalValid
     );
-    fnSetInvalid(m_pGroupSpin, !bPacketGroupingValid);
+    fnSetInvalid(m_pGroupSpin, false);
     fnSetInvalid(m_pThresholdSpin, !bThresholdValid);
     fnSetInvalid(m_pTextEdit, !bTextValid);
     fnSetInvalid(m_pSelectFileButton, !bFileValid);
@@ -1465,6 +1455,8 @@ void ManagerMainWindow::prepareFaultPlan()
             m_pFaultProtectedGroupSpin->value()
         );
         if (m_pFaultTypeCombo->currentIndex() != 2
+            && detContext.modeAuthentication()
+                == tesla::protocol::UdpAuthenticationMode::Native
             && detContext.u32PacketsPerInterval() % u32ProtectedGroupSize != 0)
         {
             m_pStatusLabel->setText(QStringLiteral(
@@ -1607,12 +1599,17 @@ void ManagerMainWindow::refreshFaultControls()
     if (bHasSelectedContext)
     {
         const auto& detContext = vecContexts.at(nSelectedContextIndex);
+        const bool bImproved = detContext.modeAuthentication()
+            == tesla::protocol::UdpAuthenticationMode::Improved;
         m_pFaultProtectedGroupSpin->blockSignals(true);
         m_pFaultProtectedGroupSpin->setMaximum(
-            static_cast<int>(detContext.u32PacketsPerInterval())
+            static_cast<int>(
+                bImproved
+                    ? detContext.u32DataPacketCount()
+                    : detContext.u32PacketsPerInterval()
+            )
         );
-        if (detContext.modeAuthentication()
-            == tesla::protocol::UdpAuthenticationMode::Improved)
+        if (bImproved)
         {
             m_pFaultProtectedGroupSpin->setValue(
                 static_cast<int>(detContext.u32GroupSize())
@@ -1622,10 +1619,11 @@ void ManagerMainWindow::refreshFaultControls()
         m_pFaultStartPacketSpin->setMaximum(
             static_cast<int>(detContext.u32DataPacketCount())
         );
-        bProtectedGroupValid = detContext.u32PacketsPerInterval()
-            % static_cast<std::uint32_t>(
-                m_pFaultProtectedGroupSpin->value()
-            ) == 0;
+        bProtectedGroupValid = bImproved
+            || detContext.u32PacketsPerInterval()
+                % static_cast<std::uint32_t>(
+                    m_pFaultProtectedGroupSpin->value()
+                ) == 0;
     }
 
     const bool bRunning = m_ctlAuthentication.bRoundRunning();

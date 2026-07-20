@@ -26,11 +26,15 @@ public:
         : m_prmRound(std::move(prmRound)),
           m_u32ProtectedGroupSize(u32ProtectedGroupSize)
     {
+        const std::uint32_t u32MaximumGroupSize =
+            m_prmRound.modeAuthentication() == TeslaAuthenticationMode::Improved
+            ? m_prmRound.u32TotalPacketCount()
+            : m_prmRound.u32PacketsPerInterval();
         if (m_u32ProtectedGroupSize == 0
-            || m_u32ProtectedGroupSize > m_prmRound.u32PacketsPerInterval())
+            || m_u32ProtectedGroupSize > u32MaximumGroupSize)
         {
             throw std::invalid_argument(
-                "Fault protected group size is outside the sender interval"
+                "Fault protected group size is outside the authentication round"
             );
         }
     }
@@ -59,6 +63,12 @@ protected:
 
     bool bIsProtectedGroupEnd(std::uint32_t u32PacketIndex) const noexcept
     {
+        if (m_prmRound.modeAuthentication() == TeslaAuthenticationMode::Improved)
+        {
+            return u32PacketIndex % m_u32ProtectedGroupSize == 0
+                || u32PacketIndex == m_prmRound.u32TotalPacketCount();
+        }
+
         const std::uint32_t u32PacketsPerInterval =
             m_prmRound.u32PacketsPerInterval();
         const std::uint32_t u32IntervalIndex =
