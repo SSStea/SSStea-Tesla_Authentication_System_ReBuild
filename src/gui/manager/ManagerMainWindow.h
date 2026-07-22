@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ManagerAttackExperimentController.h"
 #include "ManagerAuthenticationController.h"
 #include "ManagerNetworkController.h"
 
@@ -34,7 +33,6 @@ private:
     QWidget* pCreateNodePage();
     QWidget* pCreateConfigurationPage();
     QWidget* pCreateExperimentPage();
-    QWidget* pCreateAttackPage();
     QWidget* pCreateFileComparisonPage();
     QWidget* pCreateStagePlaceholder(
         const QString& strTitle,
@@ -51,18 +49,12 @@ private:
     void resumeRound();
     void stopRound();
     void prepareFaultPlan();
-    void prepareAttackContext();
-    void stopAttackPlan();
-    void emergencyStopAttackPlan();
     void refreshFaultControls();
-    void refreshAttackControls();
     void applyStyle();
 
     ManagerNetworkController m_ctlNetwork;
     ManagerAuthenticationController m_ctlAuthentication;
-    ManagerAttackExperimentController m_ctlAttackExperiment;
     QTableWidget*             m_pNodeTable;
-    QTableWidget*             m_pAttackTable;
     QLabel*                   m_pStatusLabel;
     QComboBox*                m_pModeCombo;
     QComboBox*                m_pAlgorithmCombo;
@@ -93,13 +85,6 @@ private:
     QSpinBox*                 m_pFaultDelaySpin;
     QLabel*                   m_pFaultStateLabel;
     QPushButton*              m_pFaultPrepareButton;
-    QComboBox*                m_pAttackEndpointCombo;
-    QComboBox*                m_pAttackSenderCombo;
-    QLabel*                   m_pAttackStateLabel;
-    QLabel*                   m_pAttackPlanLabel;
-    QPushButton*              m_pAttackPrepareButton;
-    QPushButton*              m_pAttackStopButton;
-    QPushButton*              m_pAttackEmergencyButton;
     bool                      m_bAuthenticationInputsValid;
     bool                      m_bPreparedConfigurationCurrent;
     QSet<QString>             m_setSelectedSenderEndpoints;

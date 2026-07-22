@@ -3,7 +3,6 @@
 #include "gui/shared/AuthenticationDisplayText.h"
 
 #include "algorithm/FileUploadSession.h"
-#include "protocol/AttackControl.h"
 #include "protocol/NodeControlJsonCodec.h"
 #include "protocol/TcpFrame.h"
 #include "workload/FileWorkload.h"
@@ -240,16 +239,6 @@ bool ManagerNodeSnapshot::bSenderRunning() const noexcept
 bool ManagerNodeSnapshot::bReceiverRunning() const noexcept
 {
     return m_bReceiverRunning;
-}
-
-bool ManagerNodeSnapshot::bMulticastListening() const noexcept
-{
-    return false;
-}
-
-bool ManagerNodeSnapshot::bAttackRunning() const noexcept
-{
-    return false;
 }
 
 qint64 ManagerNodeSnapshot::nHeartbeatAgeMilliseconds() const noexcept
@@ -507,14 +496,6 @@ bool ManagerNetworkController::bSendObservationDisplayReset(
         QHostAddress(strIpAddress),
         m_u16DiscoveryPort
     ) == arrDatagram.size();
-}
-
-bool ManagerNetworkController::bSendAttackControl(
-    const QString&,
-    const AttackControlMessage&
-)
-{
-    return false;
 }
 
 bool ManagerNetworkController::bQueueFileUpload(
@@ -962,56 +943,6 @@ void ManagerNetworkController::processNodeControlFrame(
             ));
     }
 }
-
-#if 0
-void ManagerNetworkController::processAttackControlFrame(
-    const std::shared_ptr<EndpointState>& ptrEndpoint,
-    const std::string& strJson
-)
-{
-    const AttackControlDecodeResult resMessage =
-        AttackControlJsonCodec::resDecode(strJson);
-    if (!std::holds_alternative<AttackControlMessage>(resMessage))
-    {
-        emit logMessage(QStringLiteral("攻击控制JSON解析失败"));
-        return;
-    }
-
-    const AttackControlMessage& msgMessage =
-        std::get<AttackControlMessage>(resMessage);
-    ptrEndpoint->nLastPresenceMilliseconds =
-        QDateTime::currentMSecsSinceEpoch();
-    if (msgMessage.typeMessage() != AttackControlMessageType::StatusResponse
-        && msgMessage.typeMessage() != AttackControlMessageType::Pong)
-    {
-        emit attackControlJsonReceived(
-            ptrEndpoint->strKey,
-            QString::fromStdString(strJson)
-        );
-    }
-
-    if (msgMessage.typeMessage() == AttackControlMessageType::StatusResponse)
-    {
-        const AttackStatusControlDetails& detStatus =
-            std::get<AttackStatusControlDetails>(msgMessage.varDetails());
-        ptrEndpoint->strNodeName = QString::fromStdString(detStatus.strNodeName());
-        ptrEndpoint->bMulticastListening = detStatus.bMulticastListening();
-        ptrEndpoint->bAttackRunning = detStatus.bAttackRunning();
-        emit nodesChanged();
-    }
-    else if (msgMessage.typeMessage() == AttackControlMessageType::ErrorResponse)
-    {
-        const AttackErrorControlDetails& detError =
-            std::get<AttackErrorControlDetails>(msgMessage.varDetails());
-        emit logMessage(QStringLiteral("攻击端返回错误 %1：%2")
-            .arg(
-                QString::fromStdString(detError.strErrorCode()),
-                QString::fromStdString(detError.strMessage())
-            ));
-    }
-}
-
-#endif
 
 void ManagerNetworkController::sendHelloAndStatus(
     const std::shared_ptr<EndpointState>& ptrEndpoint

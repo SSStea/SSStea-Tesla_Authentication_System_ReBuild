@@ -100,6 +100,35 @@ private:
     QByteArray m_arrOriginalSha256;
 };
 
+/** @brief 管理界面配置发送侧故障时使用的当前轮Sender公开参数快照。 */
+class ManagerSenderRoundSnapshot final
+{
+public:
+    ManagerSenderRoundSnapshot(
+        QString strSenderId,
+        std::uint64_t u64ChainId,
+        tesla::protocol::UdpAuthenticationMode modeAuthentication,
+        std::uint32_t u32TotalPacketCount,
+        std::uint32_t u32PacketsPerInterval,
+        std::uint32_t u32GroupSize
+    );
+
+    const QString& strSenderId() const noexcept;
+    std::uint64_t u64ChainId() const noexcept;
+    tesla::protocol::UdpAuthenticationMode modeAuthentication() const noexcept;
+    std::uint32_t u32TotalPacketCount() const noexcept;
+    std::uint32_t u32PacketsPerInterval() const noexcept;
+    std::uint32_t u32GroupSize() const noexcept;
+
+private:
+    QString                                        m_strSenderId;
+    std::uint64_t                                  m_u64ChainId;
+    tesla::protocol::UdpAuthenticationMode         m_modeAuthentication;
+    std::uint32_t                                  m_u32TotalPacketCount;
+    std::uint32_t                                  m_u32PacketsPerInterval;
+    std::uint32_t                                  m_u32GroupSize;
+};
+
 /**
  * @brief 管理CA材料、配置确认和统一开始/暂停/继续/停止时间线。
  *
@@ -128,11 +157,6 @@ public:
         QString& strError
     );
     bool bStartRound(QString& strError);
-    /** @brief 使用编排器提供的唯一时间启动，保证节点与测试端共享同一时间基准。 */
-    bool bStartRoundAt(
-        std::uint64_t u64StartTimestampMilliseconds,
-        QString& strError
-    );
     bool bPauseRound(QString& strError);
     bool bResumeRound(QString& strError);
     bool bStopRound(QString& strError);
@@ -149,10 +173,7 @@ public:
     bool bRoundRunning() const noexcept;
     bool bRoundPaused() const noexcept;
     QString strRoundId() const noexcept;
-    QVector<tesla::protocol::AttackRoundContextControlDetails>
-        vecAttackRoundContexts() const;
-    QString strSenderEndpointKey(int nSenderContextIndex) const;
-    QVector<QString> vecReceiverEndpointKeys(int nSenderContextIndex) const;
+    QVector<ManagerSenderRoundSnapshot> vecSenderRoundSnapshots() const;
 
 signals:
     void configurationStateChanged(bool bReady, const QString& strMessage);
@@ -192,6 +213,10 @@ private:
         tesla::protocol::AuthenticationRoundCommand cmdCommand,
         std::uint64_t u64ExecutionTimestampMilliseconds,
         std::uint32_t u32LogicalIntervalIndex,
+        QString& strError
+    );
+    bool bStartRoundAt(
+        std::uint64_t u64StartTimestampMilliseconds,
         QString& strError
     );
     bool bSendAttackSourceMappings(

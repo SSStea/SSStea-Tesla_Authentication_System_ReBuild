@@ -9,7 +9,6 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCryptographicHash>
-#include <QDateTime>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
@@ -82,9 +81,7 @@ ManagerMainWindow::ManagerMainWindow(
       // 控制器是按值成员，由C++成员生命周期管理，不能再交给Qt父对象重复销毁。
       m_ctlNetwork(u16DiscoveryPort, std::chrono::milliseconds(3000), nullptr),
       m_ctlAuthentication(m_ctlNetwork, nullptr),
-      m_ctlAttackExperiment(m_ctlNetwork, m_ctlAuthentication, nullptr),
       m_pNodeTable(nullptr),
-      m_pAttackTable(nullptr),
       m_pStatusLabel(new QLabel(QStringLiteral("就绪"), this)),
       m_pModeCombo(nullptr),
       m_pAlgorithmCombo(nullptr),
@@ -115,13 +112,6 @@ ManagerMainWindow::ManagerMainWindow(
       m_pFaultDelaySpin(nullptr),
       m_pFaultStateLabel(nullptr),
       m_pFaultPrepareButton(nullptr),
-      m_pAttackEndpointCombo(nullptr),
-      m_pAttackSenderCombo(nullptr),
-      m_pAttackStateLabel(nullptr),
-      m_pAttackPlanLabel(nullptr),
-      m_pAttackPrepareButton(nullptr),
-      m_pAttackStopButton(nullptr),
-      m_pAttackEmergencyButton(nullptr),
       m_bAuthenticationInputsValid(false),
       m_bPreparedConfigurationCurrent(false)
 {
@@ -172,7 +162,6 @@ ManagerMainWindow::ManagerMainWindow(
             m_pStatusLabel->setText(strMessage);
             refreshAuthenticationActions();
             refreshFaultControls();
-            refreshAttackControls();
         }
     );
     connect(
@@ -261,23 +250,6 @@ ManagerMainWindow::ManagerMainWindow(
             );
         }
     );
-    connect(
-        &m_ctlAttackExperiment,
-        &ManagerAttackExperimentController::stateChanged,
-        this,
-        &ManagerMainWindow::refreshAttackControls
-    );
-    connect(
-        &m_ctlAttackExperiment,
-        &ManagerAttackExperimentController::message,
-        this,
-        [this](const QString& strMessage)
-        {
-            m_pStatusLabel->setText(strMessage);
-            refreshAttackControls();
-        }
-    );
-
     m_ctlNetwork.start();
     validateAuthenticationInputs();
 }
@@ -685,85 +657,6 @@ QWidget* ManagerMainWindow::pCreateExperimentPage()
     return pPage;
 }
 
-QWidget* ManagerMainWindow::pCreateAttackPage()
-{
-    QWidget* pPage = new QWidget(this);
-    QVBoxLayout* pLayout = new QVBoxLayout(pPage);
-    QLabel* pHintLabel = new QLabel(
-        QStringLiteral(
-            "管理端只选择独立测试端和目标Sender并下发公开上下文；"
-            "具体计划在测试端配置，返回后由管理端安装临时Receiver来源映射。"
-        ),
-        pPage
-    );
-    pHintLabel->setWordWrap(true);
-    pHintLabel->setObjectName(QStringLiteral("hintLabel"));
-    pLayout->addWidget(pHintLabel);
-
-    m_pAttackTable = new QTableWidget(0, 6, pPage);
-    m_pAttackTable->setHorizontalHeaderLabels({
-        QStringLiteral("名称"),
-        QStringLiteral("IP地址"),
-        QStringLiteral("TCP状态"),
-        QStringLiteral("组播监听"),
-        QStringLiteral("测试状态"),
-        QStringLiteral("最后心跳")
-    });
-    m_pAttackTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    m_pAttackTable->verticalHeader()->setVisible(false);
-    m_pAttackTable->setAlternatingRowColors(true);
-    pLayout->addWidget(m_pAttackTable, 1);
-
-    QGroupBox* pPlanGroup = new QGroupBox(
-        QStringLiteral("认证攻击测试编排"),
-        pPage
-    );
-    QFormLayout* pForm = new QFormLayout(pPlanGroup);
-    m_pAttackEndpointCombo = new QComboBox(pPlanGroup);
-    m_pAttackSenderCombo = new QComboBox(pPlanGroup);
-    m_pAttackStateLabel = new QLabel(QStringLiteral("未准备"), pPlanGroup);
-    m_pAttackPlanLabel = new QLabel(QStringLiteral("尚未收到计划"), pPlanGroup);
-    m_pAttackPlanLabel->setWordWrap(true);
-
-    pForm->addRow(QStringLiteral("独立测试端"), m_pAttackEndpointCombo);
-    pForm->addRow(QStringLiteral("目标Sender"), m_pAttackSenderCombo);
-    pForm->addRow(QStringLiteral("测试端返回计划"), m_pAttackPlanLabel);
-    pForm->addRow(QStringLiteral("状态"), m_pAttackStateLabel);
-    pLayout->addWidget(pPlanGroup);
-
-    QHBoxLayout* pButtons = new QHBoxLayout();
-    m_pAttackPrepareButton = new QPushButton(QStringLiteral("下发公开上下文"), pPage);
-    m_pAttackStopButton = new QPushButton(QStringLiteral("停止异常流量模拟"), pPage);
-    m_pAttackEmergencyButton = new QPushButton(QStringLiteral("紧急停止"), pPage);
-    m_pAttackPrepareButton->setObjectName(QStringLiteral("primaryButton"));
-    pButtons->addWidget(m_pAttackPrepareButton);
-    pButtons->addWidget(m_pAttackStopButton);
-    pButtons->addWidget(m_pAttackEmergencyButton);
-    pButtons->addStretch();
-    pLayout->addLayout(pButtons);
-
-    connect(
-        m_pAttackPrepareButton,
-        &QPushButton::clicked,
-        this,
-        &ManagerMainWindow::prepareAttackContext
-    );
-    connect(
-        m_pAttackStopButton,
-        &QPushButton::clicked,
-        this,
-        &ManagerMainWindow::stopAttackPlan
-    );
-    connect(
-        m_pAttackEmergencyButton,
-        &QPushButton::clicked,
-        this,
-        &ManagerMainWindow::emergencyStopAttackPlan
-    );
-    refreshAttackControls();
-    return pPage;
-}
-
 QWidget* ManagerMainWindow::pCreateFileComparisonPage()
 {
     QWidget* pPage = new QWidget(this);
@@ -1089,8 +982,6 @@ void ManagerMainWindow::refreshAuthenticationActions()
         && m_bPreparedConfigurationCurrent
         && m_ctlAuthentication.bConfigurationReady()
         && m_ctlAuthentication.bFaultPlanReady()
-        && (!m_ctlAttackExperiment.bContextSent()
-            || m_ctlAttackExperiment.bReady())
         && !bRunning
     );
     m_pPauseButton->setEnabled(bRunning && !bPaused);
@@ -1286,33 +1177,8 @@ void ManagerMainWindow::startRound()
     refreshAuthenticationActions();
 
     QString strError;
-    const std::uint64_t u64StartTimestampMilliseconds =
-        static_cast<std::uint64_t>(QDateTime::currentMSecsSinceEpoch()) + 2000U;
-
-    const bool bHasAttackPlan = m_ctlAttackExperiment.bReady();
-    if (bHasAttackPlan
-        && !m_ctlAttackExperiment.bStartPrepared(
-            u64StartTimestampMilliseconds,
-            strError
-        ))
+    if (!m_ctlAuthentication.bStartRound(strError))
     {
-        m_pStatusLabel->setText(strError);
-        return;
-    }
-
-    if (!m_ctlAuthentication.bStartRoundAt(
-            u64StartTimestampMilliseconds,
-            strError
-        ))
-    {
-        if (bHasAttackPlan)
-        {
-            QString strRollbackError;
-            static_cast<void>(m_ctlAttackExperiment.bStopPrepared(
-                false,
-                strRollbackError
-            ));
-        }
         m_pStatusLabel->setText(strError);
         return;
     }
@@ -1353,15 +1219,6 @@ void ManagerMainWindow::resumeRound()
 void ManagerMainWindow::stopRound()
 {
     QString strError;
-    if (m_ctlAttackExperiment.bRunning()
-        || m_ctlAttackExperiment.bReady())
-    {
-        QString strTestStopError;
-        static_cast<void>(m_ctlAttackExperiment.bStopPrepared(
-            false,
-            strTestStopError
-        ));
-    }
     if (!m_ctlAuthentication.bStopRound(strError))
     {
         m_pStatusLabel->setText(strError);
@@ -1378,23 +1235,24 @@ void ManagerMainWindow::prepareFaultPlan()
         QString strError;
         const int nSenderContextIndex =
             m_pFaultSenderCombo->currentData().toInt();
-        const QVector<tesla::protocol::AttackRoundContextControlDetails>
-            vecContexts = m_ctlAuthentication.vecAttackRoundContexts();
+        const QVector<ManagerSenderRoundSnapshot> vecSnapshots =
+            m_ctlAuthentication.vecSenderRoundSnapshots();
         if (nSenderContextIndex < 0
-            || nSenderContextIndex >= vecContexts.size())
+            || nSenderContextIndex >= vecSnapshots.size())
         {
             m_pStatusLabel->setText(QStringLiteral("故障注入目标Sender无效"));
             return;
         }
 
-        const auto& detContext = vecContexts.at(nSenderContextIndex);
+        const ManagerSenderRoundSnapshot& snpSender =
+            vecSnapshots.at(nSenderContextIndex);
         const std::uint32_t u32ProtectedGroupSize = static_cast<std::uint32_t>(
             m_pFaultProtectedGroupSpin->value()
         );
         if (m_pFaultTypeCombo->currentIndex() != 2
-            && detContext.modeAuthentication()
+            && snpSender.modeAuthentication()
                 == tesla::protocol::UdpAuthenticationMode::Native
-            && detContext.u32PacketsPerInterval() % u32ProtectedGroupSize != 0)
+            && snpSender.u32PacketsPerInterval() % u32ProtectedGroupSize != 0)
         {
             m_pStatusLabel->setText(QStringLiteral(
                 "标签保护分组必须整除每间隔发包数"
@@ -1451,51 +1309,6 @@ void ManagerMainWindow::prepareFaultPlan()
     }
 }
 
-void ManagerMainWindow::prepareAttackContext()
-{
-    QString strError;
-    if (!m_ctlAttackExperiment.bPrepareContext(
-            m_pAttackEndpointCombo->currentData().toString(),
-            m_pAttackSenderCombo->currentData().toInt(),
-            strError
-        ))
-    {
-        m_pStatusLabel->setText(strError);
-        return;
-    }
-
-    m_pStatusLabel->setText(QStringLiteral(
-        "公开上下文已下发，请在独立测试端配置计划"
-    ));
-    refreshAttackControls();
-}
-
-void ManagerMainWindow::stopAttackPlan()
-{
-    QString strError;
-    if (!m_ctlAttackExperiment.bStopPrepared(false, strError))
-    {
-        m_pStatusLabel->setText(strError);
-        return;
-    }
-
-    m_pStatusLabel->setText(QStringLiteral("异常流量模拟停止命令已下发"));
-    refreshAttackControls();
-}
-
-void ManagerMainWindow::emergencyStopAttackPlan()
-{
-    QString strError;
-    if (!m_ctlAttackExperiment.bStopPrepared(true, strError))
-    {
-        m_pStatusLabel->setText(strError);
-        return;
-    }
-
-    m_pStatusLabel->setText(QStringLiteral("异常流量模拟紧急停止命令已下发"));
-    refreshAttackControls();
-}
-
 void ManagerMainWindow::refreshFaultControls()
 {
     if (m_pFaultSenderCombo == nullptr || m_pFaultTypeCombo == nullptr)
@@ -1504,17 +1317,17 @@ void ManagerMainWindow::refreshFaultControls()
     }
 
     const int nCurrentSenderIndex = m_pFaultSenderCombo->currentData().toInt();
-    const QVector<tesla::protocol::AttackRoundContextControlDetails>
-        vecContexts = m_ctlAuthentication.vecAttackRoundContexts();
+    const QVector<ManagerSenderRoundSnapshot> vecSnapshots =
+        m_ctlAuthentication.vecSenderRoundSnapshots();
     m_pFaultSenderCombo->blockSignals(true);
     m_pFaultSenderCombo->clear();
-    for (int nIndex = 0; nIndex < vecContexts.size(); ++nIndex)
+    for (int nIndex = 0; nIndex < vecSnapshots.size(); ++nIndex)
     {
-        const auto& detContext = vecContexts.at(nIndex);
+        const ManagerSenderRoundSnapshot& snpSender = vecSnapshots.at(nIndex);
         m_pFaultSenderCombo->addItem(
-            QString::fromStdString(detContext.strTargetSenderId())
+            snpSender.strSenderId()
                 + QStringLiteral(" / chain ")
-                + QString::number(detContext.u64ChainId()),
+                + QString::number(snpSender.u64ChainId()),
             nIndex
         );
     }
@@ -1531,33 +1344,34 @@ void ManagerMainWindow::refreshFaultControls()
     const int nSelectedContextIndex =
         m_pFaultSenderCombo->currentData().toInt();
     const bool bHasSelectedContext = nSelectedContextIndex >= 0
-        && nSelectedContextIndex < vecContexts.size();
+        && nSelectedContextIndex < vecSnapshots.size();
     bool bProtectedGroupValid = true;
     if (bHasSelectedContext)
     {
-        const auto& detContext = vecContexts.at(nSelectedContextIndex);
-        const bool bImproved = detContext.modeAuthentication()
+        const ManagerSenderRoundSnapshot& snpSender =
+            vecSnapshots.at(nSelectedContextIndex);
+        const bool bImproved = snpSender.modeAuthentication()
             == tesla::protocol::UdpAuthenticationMode::Improved;
         m_pFaultProtectedGroupSpin->blockSignals(true);
         m_pFaultProtectedGroupSpin->setMaximum(
             static_cast<int>(
                 bImproved
-                    ? detContext.u32DataPacketCount()
-                    : detContext.u32PacketsPerInterval()
+                    ? snpSender.u32TotalPacketCount()
+                    : snpSender.u32PacketsPerInterval()
             )
         );
         if (bImproved)
         {
             m_pFaultProtectedGroupSpin->setValue(
-                static_cast<int>(detContext.u32GroupSize())
+                static_cast<int>(snpSender.u32GroupSize())
             );
         }
         m_pFaultProtectedGroupSpin->blockSignals(false);
         m_pFaultStartPacketSpin->setMaximum(
-            static_cast<int>(detContext.u32DataPacketCount())
+            static_cast<int>(snpSender.u32TotalPacketCount())
         );
         bProtectedGroupValid = bImproved
-            || detContext.u32PacketsPerInterval()
+            || snpSender.u32PacketsPerInterval()
                 % static_cast<std::uint32_t>(
                     m_pFaultProtectedGroupSpin->value()
                 ) == 0;
@@ -1569,7 +1383,6 @@ void ManagerMainWindow::refreshFaultControls()
         && !m_ctlAuthentication.bFaultPlanPending()
         && (!m_ctlAuthentication.bFaultConfigured()
             || !m_ctlAuthentication.bFaultPlanReady())
-        && !m_ctlAttackExperiment.bContextSent()
         && m_pFaultSenderCombo->count() > 0;
     const bool bRequiresProtectedGroup = nType == 0 || nType == 1;
     const bool bCanConfigure = bCanConfigureBase
@@ -1579,7 +1392,7 @@ void ManagerMainWindow::refreshFaultControls()
         bRequiresProtectedGroup
             && bCanConfigureBase
             && bHasSelectedContext
-            && vecContexts.at(nSelectedContextIndex).modeAuthentication()
+            && vecSnapshots.at(nSelectedContextIndex).modeAuthentication()
                 == tesla::protocol::UdpAuthenticationMode::Native
     );
     m_pFaultStartPacketSpin->setEnabled(nType == 1 && bCanConfigure);
@@ -1607,64 +1420,6 @@ void ManagerMainWindow::refreshFaultControls()
     {
         m_pFaultStateLabel->setText(QStringLiteral("未配置"));
     }
-}
-
-void ManagerMainWindow::refreshAttackControls()
-{
-    if (m_pAttackEndpointCombo == nullptr
-        || m_pAttackSenderCombo == nullptr)
-    {
-        return;
-    }
-
-    const int nCurrentSenderIndex =
-        m_pAttackSenderCombo->currentData().toInt();
-    const QVector<tesla::protocol::AttackRoundContextControlDetails>
-        vecContexts = m_ctlAuthentication.vecAttackRoundContexts();
-    m_pAttackSenderCombo->blockSignals(true);
-    m_pAttackSenderCombo->clear();
-    for (int nIndex = 0; nIndex < vecContexts.size(); ++nIndex)
-    {
-        const tesla::protocol::AttackRoundContextControlDetails& detContext =
-            vecContexts.at(nIndex);
-        m_pAttackSenderCombo->addItem(
-            QString::fromStdString(detContext.strTargetSenderId())
-                + QStringLiteral(" / chain ")
-                + QString::number(detContext.u64ChainId()),
-            nIndex
-        );
-    }
-    const int nRestoredIndex = m_pAttackSenderCombo->findData(
-        nCurrentSenderIndex
-    );
-    if (nRestoredIndex >= 0)
-    {
-        m_pAttackSenderCombo->setCurrentIndex(nRestoredIndex);
-    }
-    m_pAttackSenderCombo->blockSignals(false);
-
-    const bool bHasEndpoint = m_pAttackEndpointCombo->count() > 0;
-    const bool bHasContext = m_pAttackSenderCombo->count() > 0;
-    const bool bReady = m_ctlAttackExperiment.bReady();
-    const bool bRunning = m_ctlAttackExperiment.bRunning();
-    m_pAttackStateLabel->setText(m_ctlAttackExperiment.strStateText());
-    m_pAttackPlanLabel->setText(m_ctlAttackExperiment.strPlanSummary());
-
-    m_pAttackPrepareButton->setEnabled(
-        bHasEndpoint
-            && bHasContext
-            && !bRunning
-            && !m_ctlAttackExperiment.bContextSent()
-            && !m_ctlAuthentication.bFaultConfigured()
-    );
-    m_pAttackEndpointCombo->setEnabled(!m_ctlAttackExperiment.bContextSent());
-    m_pAttackSenderCombo->setEnabled(!m_ctlAttackExperiment.bContextSent());
-    m_pAttackStopButton->setEnabled(
-        m_ctlAttackExperiment.bContextSent() || bReady || bRunning
-    );
-    m_pAttackEmergencyButton->setEnabled(bReady || bRunning);
-
-    refreshAuthenticationActions();
 }
 
 void ManagerMainWindow::applyStyle()

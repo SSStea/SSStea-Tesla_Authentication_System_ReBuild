@@ -1,6 +1,5 @@
 #pragma once
 
-#include "protocol/AttackControl.h"
 #include "protocol/NodeControlMessage.h"
 #include "protocol/NodeDiscoveryMessage.h"
 
@@ -51,8 +50,6 @@ public:
     ManagerConnectionState stateConnection() const noexcept;
     bool bSenderRunning() const noexcept;
     bool bReceiverRunning() const noexcept;
-    bool bMulticastListening() const noexcept;
-    bool bAttackRunning() const noexcept;
     qint64 nHeartbeatAgeMilliseconds() const noexcept;
 
 private:
@@ -104,10 +101,6 @@ public:
         const QString& strIpAddress,
         const QString& strRoundId
     );
-    bool bSendAttackControl(
-        const QString& strEndpointKey,
-        const tesla::protocol::AttackControlMessage& msgMessage
-    );
     /** @brief 在现有MANAGER连接上按64KiB分块并受背压约束地上传完整文件。 */
     bool bQueueFileUpload(
         const QString& strEndpointKey,
@@ -121,10 +114,6 @@ public:
 signals:
     void nodesChanged();
     void nodeControlJsonReceived(
-        const QString& strEndpointKey,
-        const QString& strJson
-    );
-    void attackControlJsonReceived(
         const QString& strEndpointKey,
         const QString& strJson
     );

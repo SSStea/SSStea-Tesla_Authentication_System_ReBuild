@@ -333,6 +333,56 @@ ManagerFileRoundConfiguration::arrOriginalSha256() const noexcept
     return m_arrOriginalSha256;
 }
 
+ManagerSenderRoundSnapshot::ManagerSenderRoundSnapshot(
+    QString strSenderId,
+    std::uint64_t u64ChainId,
+    tesla::protocol::UdpAuthenticationMode modeAuthentication,
+    std::uint32_t u32TotalPacketCount,
+    std::uint32_t u32PacketsPerInterval,
+    std::uint32_t u32GroupSize
+)
+    : m_strSenderId(std::move(strSenderId)),
+      m_u64ChainId(u64ChainId),
+      m_modeAuthentication(modeAuthentication),
+      m_u32TotalPacketCount(u32TotalPacketCount),
+      m_u32PacketsPerInterval(u32PacketsPerInterval),
+      m_u32GroupSize(u32GroupSize)
+{
+}
+
+const QString& ManagerSenderRoundSnapshot::strSenderId() const noexcept
+{
+    return m_strSenderId;
+}
+
+std::uint64_t ManagerSenderRoundSnapshot::u64ChainId() const noexcept
+{
+    return m_u64ChainId;
+}
+
+tesla::protocol::UdpAuthenticationMode
+ManagerSenderRoundSnapshot::modeAuthentication() const noexcept
+{
+    return m_modeAuthentication;
+}
+
+std::uint32_t
+ManagerSenderRoundSnapshot::u32TotalPacketCount() const noexcept
+{
+    return m_u32TotalPacketCount;
+}
+
+std::uint32_t
+ManagerSenderRoundSnapshot::u32PacketsPerInterval() const noexcept
+{
+    return m_u32PacketsPerInterval;
+}
+
+std::uint32_t ManagerSenderRoundSnapshot::u32GroupSize() const noexcept
+{
+    return m_u32GroupSize;
+}
+
 ManagerAuthenticationController::ManagerAuthenticationController(
     ManagerNetworkController& ctlNetwork,
     QObject* pParent
@@ -1102,11 +1152,11 @@ QString ManagerAuthenticationController::strRoundId() const noexcept
     return m_strRoundId;
 }
 
-QVector<tesla::protocol::AttackRoundContextControlDetails>
-ManagerAuthenticationController::vecAttackRoundContexts() const
+QVector<ManagerSenderRoundSnapshot>
+ManagerAuthenticationController::vecSenderRoundSnapshots() const
 {
-    QVector<tesla::protocol::AttackRoundContextControlDetails> vecContexts;
-    vecContexts.reserve(static_cast<qsizetype>(m_vecSenderTargets.size()));
+    QVector<ManagerSenderRoundSnapshot> vecSnapshots;
+    vecSnapshots.reserve(static_cast<qsizetype>(m_vecSenderTargets.size()));
     for (const SenderTarget& tgtSender : m_vecSenderTargets)
     {
         const tesla::core::SenderAuthenticationMaterial& matMaterial =
@@ -1115,75 +1165,25 @@ ManagerAuthenticationController::vecAttackRoundContexts() const
             matMaterial.prmRoundParameters();
 
         std::uint32_t u32GroupSize = 0;
-        std::uint32_t u32DetectionThreshold = 0;
-        std::size_t   nTauCount = 0;
         if (prmRound.optImprovedParameters().has_value())
         {
             u32GroupSize =
                 prmRound.optImprovedParameters()->u32GroupSize();
-            u32DetectionThreshold =
-                prmRound.optImprovedParameters()->u32DetectionThreshold();
-            nTauCount =
-                prmRound.optImprovedParameters()->nTauCount();
         }
 
-        vecContexts.emplaceBack(
-            strCreateRequestId(QStringLiteral("attack-context")).toStdString(),
-            m_strRoundId.toStdString(),
-            matMaterial.strSenderId(),
-            tgtSender.strIpAddress.toStdString(),
+        vecSnapshots.emplaceBack(
+            QString::fromStdString(matMaterial.strSenderId()),
             matMaterial.u64ChainId(),
-            algControl(prmRound.algCryptoAlgorithm()),
             prmRound.modeAuthentication()
                     == tesla::core::TeslaAuthenticationMode::Native
                 ? tesla::protocol::UdpAuthenticationMode::Native
                 : tesla::protocol::UdpAuthenticationMode::Improved,
             prmRound.u32TotalPacketCount(),
             prmRound.u32PacketsPerInterval(),
-            prmRound.u32IntervalMilliseconds(),
-            prmRound.u32DisclosureDelay(),
-            prmRound.u64StartTimestampMilliseconds(),
-            u32GroupSize,
-            u32DetectionThreshold,
-            nTauCount
+            u32GroupSize
         );
     }
-    return vecContexts;
-}
-
-QString ManagerAuthenticationController::strSenderEndpointKey(
-    int nSenderContextIndex
-) const
-{
-    if (nSenderContextIndex < 0
-        || nSenderContextIndex >= static_cast<int>(m_vecSenderTargets.size()))
-    {
-        return {};
-    }
-    return m_vecSenderTargets.at(
-        static_cast<std::size_t>(nSenderContextIndex)
-    ).strEndpointKey;
-}
-
-QVector<QString> ManagerAuthenticationController::vecReceiverEndpointKeys(
-    int nSenderContextIndex
-) const
-{
-    QVector<QString> vecEndpoints;
-    const QString strSenderEndpoint = strSenderEndpointKey(nSenderContextIndex);
-    if (strSenderEndpoint.isEmpty())
-    {
-        return vecEndpoints;
-    }
-
-    for (const QString& strEndpointKey : m_setParticipantEndpoints)
-    {
-        if (strEndpointKey != strSenderEndpoint)
-        {
-            vecEndpoints.push_back(strEndpointKey);
-        }
-    }
-    return vecEndpoints;
+    return vecSnapshots;
 }
 
 void ManagerAuthenticationController::processNodeControlJson(
