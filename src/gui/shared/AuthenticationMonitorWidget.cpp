@@ -86,6 +86,13 @@ QString strTime(std::uint64_t u64TimestampMilliseconds)
     ).toString(QStringLiteral("HH:mm:ss.zzz"));
 }
 
+QString strTableTime(std::uint64_t u64TimestampMilliseconds)
+{
+    return QDateTime::fromMSecsSinceEpoch(
+        static_cast<qint64>(u64TimestampMilliseconds)
+    ).toString(QStringLiteral("HH:mm:ss"));
+}
+
 QString strPacketStatus(PacketAuthenticationStatus statusAuthentication)
 {
     switch (statusAuthentication)
@@ -244,7 +251,7 @@ public:
             switch (idxIndex.column())
             {
             case 0:
-                return strTime(pFailure->u64TimestampMilliseconds());
+                return strTableTime(pFailure->u64TimestampMilliseconds());
             case 1:
                 return QStringLiteral("RX");
             case 2:
@@ -291,7 +298,7 @@ public:
         switch (idxIndex.column())
         {
         case 0:
-            return strTime(detPacket.u64TimestampMilliseconds());
+            return strTableTime(detPacket.u64TimestampMilliseconds());
         case 1:
             return detPacket.dirDirection() == PacketObservationDirection::Tx
                 ? QStringLiteral("TX") : QStringLiteral("RX");
