@@ -21,6 +21,19 @@ void validateText(
 }
 }
 
+ObservationDisplayResetControlDetails::
+ObservationDisplayResetControlDetails(std::string strRequestId)
+    : m_strRequestId(std::move(strRequestId))
+{
+    validateText(m_strRequestId, "Observation reset request ID");
+}
+
+const std::string&
+ObservationDisplayResetControlDetails::strRequestId() const noexcept
+{
+    return m_strRequestId;
+}
+
 NativePacketObservationDetails::NativePacketObservationDetails(
     BinaryBlock arrPacketMac
 )

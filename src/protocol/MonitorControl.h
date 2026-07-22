@@ -66,6 +66,18 @@ enum class GroupVerificationPath
     IncompleteGroupTags
 };
 
+/** @brief 节点接受新认证配置后通知监控端清空上一轮展示数据。 */
+class ObservationDisplayResetControlDetails final
+{
+public:
+    explicit ObservationDisplayResetControlDetails(std::string strRequestId);
+
+    const std::string& strRequestId() const noexcept;
+
+private:
+    std::string m_strRequestId;
+};
+
 /** @brief 原生TESLA报文展示字段，仅保存该模式实际携带的逐包MAC。 */
 class NativePacketObservationDetails final
 {

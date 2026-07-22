@@ -1029,6 +1029,14 @@ void PcNodeNetworkController::processAuthenticationRuntimeEvent(
     }
 
     broadcastNodeControl(msgMessage);
+    if (msgMessage.typeMessage()
+        == NodeControlMessageType::ObservationDisplayResetEvent)
+    {
+        emit authenticationObservationsChanged();
+        emit stateChanged();
+        return;
+    }
+
     if (msgMessage.typeMessage() == NodeControlMessageType::RoundResult)
     {
         const auto& detResult = std::get<

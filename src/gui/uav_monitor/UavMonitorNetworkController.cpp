@@ -391,6 +391,12 @@ void UavMonitorNetworkController::processTcpData()
             );
         }
         else if (msgMessage.typeMessage()
+            == NodeControlMessageType::ObservationDisplayResetEvent)
+        {
+            m_stoObservations.clear();
+            emit authenticationObservationsChanged();
+        }
+        else if (msgMessage.typeMessage()
             == NodeControlMessageType::PacketObservationEvent)
         {
             appendObservation(std::get<PacketObservationControlDetails>(

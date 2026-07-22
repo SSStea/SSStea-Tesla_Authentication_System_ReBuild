@@ -748,28 +748,34 @@ private:
                 0
             };
 
-            std::lock_guard<std::mutex> lckConfig(m_mtxConfig);
-            // 新链配置先使旧载荷失效，必须收到同一chainId的新载荷后才能启动。
-            m_runSender.resetConfiguration();
-            m_optSenderContext = std::move(ctxCandidate);
-            for (auto itrArchive = m_mapArchiveContexts.begin();
-                itrArchive != m_mapArchiveContexts.end();)
             {
-                // 本节点同一时刻只保留一条Sender链，防止长期运行累积过期归档上下文。
-                if (itrArchive->first.first == detConfig.strSenderId()
-                    && itrArchive->first.second != detConfig.u64ChainId())
+                std::lock_guard<std::mutex> lckConfig(m_mtxConfig);
+                // 新链配置先使旧载荷失效，必须收到同一chainId的新载荷后才能启动。
+                m_runSender.resetConfiguration();
+                m_optSenderContext = std::move(ctxCandidate);
+                for (auto itrArchive = m_mapArchiveContexts.begin();
+                    itrArchive != m_mapArchiveContexts.end();)
                 {
-                    itrArchive = m_mapArchiveContexts.erase(itrArchive);
+                    // 本节点同一时刻只保留一条Sender链，防止长期运行累积过期归档上下文。
+                    if (itrArchive->first.first == detConfig.strSenderId()
+                        && itrArchive->first.second != detConfig.u64ChainId())
+                    {
+                        itrArchive = m_mapArchiveContexts.erase(itrArchive);
+                    }
+                    else
+                    {
+                        ++itrArchive;
+                    }
                 }
-                else
-                {
-                    ++itrArchive;
-                }
+                m_mapArchiveContexts.insert_or_assign(
+                    ArchiveContextKey(
+                        detConfig.strSenderId(),
+                        detConfig.u64ChainId()
+                    ),
+                    std::move(ctxArchive)
+                );
             }
-            m_mapArchiveContexts.insert_or_assign(
-                ArchiveContextKey(detConfig.strSenderId(), detConfig.u64ChainId()),
-                std::move(ctxArchive)
-            );
+            resetObservationDisplay(detConfig.strRequestId());
             return msgConfigAcknowledgement(
                 detConfig.strRequestId(),
                 protocol::AuthenticationConfigTarget::Sender,
@@ -874,6 +880,7 @@ private:
                     );
                 }
             }
+            resetObservationDisplay(detConfig.strRequestId());
             return msgConfigAcknowledgement(
                 detConfig.strRequestId(),
                 protocol::AuthenticationConfigTarget::Receiver,
@@ -1474,6 +1481,21 @@ private:
         catch (...)
         {
             // 平台事件发送失败不得反向终止算法线程。
+        }
+    }
+
+    void resetObservationDisplay(const std::string& strRequestId) noexcept
+    {
+        m_stoObservations.clear();
+        try
+        {
+            m_fnControlEventHandler(protocol::NodeControlMessage(
+                protocol::ObservationDisplayResetControlDetails(strRequestId)
+            ));
+        }
+        catch (...)
+        {
+            // 展示重置事件发送失败不得改变新认证配置的接收结果。
         }
     }
 

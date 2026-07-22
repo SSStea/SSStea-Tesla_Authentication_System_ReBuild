@@ -60,6 +60,8 @@ const char* pTypeName(NodeControlMessageType typeMessage)
         return "ROUND_RESULT";
     case NodeControlMessageType::RoundDrainAcknowledgement:
         return "ROUND_DRAIN_ACK";
+    case NodeControlMessageType::ObservationDisplayResetEvent:
+        return "OBSERVATION_DISPLAY_RESET_EVENT";
     case NodeControlMessageType::PacketObservationEvent:
         return "PACKET_OBSERVATION_EVENT";
     case NodeControlMessageType::PacketFailureEvent:
@@ -1960,6 +1962,14 @@ std::string NodeControlJsonCodec::strEncode(const NodeControlMessage& msgMessage
         jsnMessage["nodeName"] = detAck.strNodeName();
     }
     else if (msgMessage.typeMessage()
+        == NodeControlMessageType::ObservationDisplayResetEvent)
+    {
+        const ObservationDisplayResetControlDetails& detReset = std::get<
+            ObservationDisplayResetControlDetails
+        >(msgMessage.varDetails());
+        jsnMessage["requestId"] = detReset.strRequestId();
+    }
+    else if (msgMessage.typeMessage()
         == NodeControlMessageType::PacketObservationEvent)
     {
         const PacketObservationControlDetails& detPacket = std::get<
@@ -2404,6 +2414,13 @@ NodeControlDecodeResult NodeControlJsonCodec::resDecode(const std::string& strJs
                     jsnMessage.at("nodeName").get<std::string>()
                 )
             );
+        }
+
+        if (strType == "OBSERVATION_DISPLAY_RESET_EVENT")
+        {
+            return NodeControlMessage(ObservationDisplayResetControlDetails(
+                jsnMessage.at("requestId").get<std::string>()
+            ));
         }
 
         if (strType == "PACKET_OBSERVATION_EVENT")

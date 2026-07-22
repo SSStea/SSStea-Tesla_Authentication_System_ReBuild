@@ -754,6 +754,10 @@ public:
         m_pProxyModel->setFailures(vecFailures);
         refreshQuickButtonCounts();
         exportCompletedRounds();
+        if (m_pPacketModel->rowCount() == 0)
+        {
+            m_pDetailEdit->clear();
+        }
 
         if (vecDosSummaries.empty())
         {
