@@ -289,7 +289,7 @@ bool AttackTestNetworkController::bBroadcastMessageConflict(
     }
 
     emit logMessage(QStringLiteral(
-        "已广播Message冲突副本：Sender=%1，原间隔=%2，原报文编号=%3"
+        "已广播篡改副本：Sender=%1，原间隔=%2，原报文编号=%3"
     ).arg(pRecord->strSenderAddress())
         .arg(pRecord->u32OriginalIntervalIndex())
         .arg(pRecord->u32OriginalPacketIndex()));
@@ -313,7 +313,7 @@ bool AttackTestNetworkController::bBroadcastDelayedDuplicate(
     }
 
     emit logMessage(QStringLiteral(
-        "已广播延迟重复报文：Sender=%1，原间隔=%2，原报文编号=%3"
+        "已广播重放报文：Sender=%1，原间隔=%2，原报文编号=%3"
     ).arg(pRecord->strSenderAddress())
         .arg(pRecord->u32OriginalIntervalIndex())
         .arg(pRecord->u32OriginalPacketIndex()));
@@ -334,13 +334,13 @@ bool AttackTestNetworkController::bStartHighRateTraffic(
     }
     if (m_bHighRateTrafficRunning)
     {
-        strError = QStringLiteral("高频无效流量已经在运行");
+        strError = QStringLiteral("Dos已经在运行");
         return false;
     }
     if (u32PacketsPerSecond == 0 || u32DurationMilliseconds == 0
         || u32DatagramBytes == 0 || u32DatagramBytes > 1400)
     {
-        strError = QStringLiteral("高频无效流量参数超出允许范围");
+        strError = QStringLiteral("Dos参数超出允许范围");
         return false;
     }
 
@@ -351,7 +351,7 @@ bool AttackTestNetworkController::bStartHighRateTraffic(
     m_tmrHighRateElapsed.restart();
     m_bHighRateTrafficRunning = true;
     m_pHighRateTimer->start();
-    emit logMessage(QStringLiteral("高频无效流量已开始"));
+    emit logMessage(QStringLiteral("Dos已开始"));
     emit stateChanged();
     return true;
 }
@@ -365,7 +365,7 @@ void AttackTestNetworkController::stopHighRateTraffic() noexcept
 
     m_pHighRateTimer->stop();
     m_bHighRateTrafficRunning = false;
-    emit logMessage(QStringLiteral("高频无效流量已停止，共广播 %1 条")
+    emit logMessage(QStringLiteral("Dos已停止，共广播 %1 条")
         .arg(m_u64HighRateSentCount));
     emit stateChanged();
 }

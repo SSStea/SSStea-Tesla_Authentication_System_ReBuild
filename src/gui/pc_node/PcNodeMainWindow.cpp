@@ -43,13 +43,13 @@ PcNodeMainWindow::PcNodeMainWindow(
       m_pKeyChainWidget(nullptr),
       m_pMatrixWidget(nullptr)
 {
-    setWindowTitle(QStringLiteral("TESLA PC广播节点"));
+    setWindowTitle(QStringLiteral("无人机传输认证系统 PC节点"));
     resize(1220, 760);
 
     QWidget* pCentralWidget = new QWidget(this);
     QVBoxLayout* pLayout = new QVBoxLayout(pCentralWidget);
     QLabel* pTitleLabel = new QLabel(
-        QStringLiteral("TESLA PC广播节点 · ")
+        QStringLiteral("无人机传输认证系统 PC节点 · ")
             + m_ctlNetwork.strNodeName(),
         pCentralWidget
     );

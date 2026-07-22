@@ -40,7 +40,7 @@ inline QString strAuthenticationFailureTypeDisplay(
     case protocol::AuthenticationFailureType::MacFailed:
         return QStringLiteral("MAC校验失败");
     case protocol::AuthenticationFailureType::MessageConflict:
-        return QStringLiteral("Message冲突副本");
+        return QStringLiteral("篡改");
     case protocol::AuthenticationFailureType::FastGroupFailed:
         return QStringLiteral("快速组校验失败");
     case protocol::AuthenticationFailureType::GroupTauFailed:
@@ -48,7 +48,7 @@ inline QString strAuthenticationFailureTypeDisplay(
     case protocol::AuthenticationFailureType::DetectionThresholdExceeded:
         return QStringLiteral("超过检测阈值");
     case protocol::AuthenticationFailureType::DuplicateDatagram:
-        return QStringLiteral("延迟重复报文");
+        return QStringLiteral("重放报文");
     case protocol::AuthenticationFailureType::ArrivalWindowExpired:
         return QStringLiteral("超过到达时间窗口");
     case protocol::AuthenticationFailureType::ExpiredChainDatagram:
@@ -132,9 +132,9 @@ inline QString strAuthenticationReasonDisplay(const std::string& strReason)
         {QStringLiteral("Message recalculated MAC differs from the received MAC"),
          QStringLiteral("根据Message重新计算的MAC与接收MAC不一致")},
         {QStringLiteral("Conflicting candidate MAC passed"),
-         QStringLiteral("Message冲突副本的MAC校验通过")},
+         QStringLiteral("篡改副本的MAC校验通过")},
         {QStringLiteral("Conflicting candidate MAC failed"),
-         QStringLiteral("Message冲突副本的MAC校验失败")},
+         QStringLiteral("篡改副本的MAC校验失败")},
         {QStringLiteral("Improved group authentication passed"),
          QStringLiteral("S-TESLA分组校验通过")},
         {QStringLiteral("Improved group authentication rejected this packet"),
@@ -152,13 +152,13 @@ inline QString strAuthenticationReasonDisplay(const std::string& strReason)
         {QStringLiteral("Identical candidate datagram was received repeatedly"),
          QStringLiteral("重复收到完全相同的候选报文")},
         {QStringLiteral("Conflicting candidate duplicate received"),
-         QStringLiteral("收到重复的Message冲突副本")},
+         QStringLiteral("收到重复的篡改副本")},
         {QStringLiteral("Identical conflicting candidate was received repeatedly"),
-         QStringLiteral("重复收到完全相同的Message冲突副本")},
+         QStringLiteral("重复收到完全相同的篡改副本")},
         {QStringLiteral("Per-packet candidate version limit reached"),
          QStringLiteral("单个报文的候选版本数量达到上限")},
         {QStringLiteral("Conflicting candidate retained without replacing the baseline"),
-         QStringLiteral("保留Message冲突副本且不替换正常报文基准")},
+         QStringLiteral("保留篡改副本且不替换正常报文基准")},
         {QStringLiteral("Same sender, chain and packet index carried a different datagram"),
          QStringLiteral("相同Sender、密钥链和报文编号携带了不同报文")},
         {QStringLiteral("Repeated attack candidate retained"),
@@ -268,9 +268,9 @@ inline QString strAuthenticationReasonDisplay(const std::string& strReason)
         {QStringLiteral("Attack candidate retained without occupying the baseline; "),
          QStringLiteral("保留攻击候选报文且不占用正常报文基准；")},
         {QStringLiteral("TAMPERED_VARIANT: baseline passed and conflicting MAC failed"),
-         QStringLiteral("Message冲突副本：正常报文基准校验通过，但冲突副本MAC校验失败")},
+         QStringLiteral("篡改副本：正常报文基准校验通过，但冲突副本MAC校验失败")},
         {QStringLiteral("TAMPERED_VARIANT: attack group failed FastGroupTag and entered KS+RS"),
-         QStringLiteral("Message冲突副本：候选分组快速组标签校验失败，已进入KS+RS校验")},
+         QStringLiteral("篡改副本：候选分组快速组标签校验失败，已进入KS+RS校验")},
         {QStringLiteral("ATTACK_DETECTED: legal baseline passed and attack candidate failed"),
          QStringLiteral("检测到攻击异常：正常报文基准校验通过，候选报文校验失败")},
         {QStringLiteral("ATTACK_DETECTED; DETECTION_THRESHOLD_EXCEEDED"),
@@ -278,17 +278,17 @@ inline QString strAuthenticationReasonDisplay(const std::string& strReason)
         {QStringLiteral("ATTACK_DETECTED; attack candidate located by KS+RS fallback"),
          QStringLiteral("检测到攻击异常；KS+RS校验已定位候选异常报文")},
         {QStringLiteral("Conflicting candidate failed native MAC verification"),
-         QStringLiteral("Message冲突副本未通过TESLA MAC校验")},
+         QStringLiteral("篡改副本未通过TESLA MAC校验")},
         {QStringLiteral("DuplicateDatagram: cryptographic check passed but "),
-         QStringLiteral("延迟重复报文的密码学校验通过，但重复规则拒绝该报文；")},
+         QStringLiteral("重放报文的密码学校验通过，但重复规则拒绝该报文；")},
         {QStringLiteral("MacFailed: current interval key rejected the attack candidate; "),
          QStringLiteral("MAC校验失败：当前间隔密钥未通过攻击候选报文校验；")},
         {QStringLiteral("DuplicateDatagram: group check passed but duplicate rule rejected it; "),
-         QStringLiteral("延迟重复报文的分组校验通过，但重复规则拒绝该报文；")},
+         QStringLiteral("重放报文的分组校验通过，但重复规则拒绝该报文；")},
         {QStringLiteral("GroupVerificationFailed: arrival-interval keys rejected the attack candidate; "),
          QStringLiteral("分组校验失败：到达间隔密钥未通过攻击候选报文校验；")},
         {QStringLiteral("DuplicateDatagram; "),
-         QStringLiteral("延迟重复报文；")},
+         QStringLiteral("重放报文；")},
         {QStringLiteral("MacFailed; "),
          QStringLiteral("MAC校验失败；")},
         {QStringLiteral("originalInterval="),

@@ -56,13 +56,13 @@ UavMonitorMainWindow::UavMonitorMainWindow(
       m_pLogEdit(nullptr),
       m_pAuthenticationMonitor(nullptr)
 {
-    setWindowTitle(QStringLiteral("TESLA 无人机广播节点监控"));
+    setWindowTitle(QStringLiteral("无人机传输认证系统 无人机节点监控"));
     resize(1220, 760);
 
     QWidget* pCentralWidget = new QWidget(this);
     QVBoxLayout* pLayout = new QVBoxLayout(pCentralWidget);
     QLabel* pTitleLabel = new QLabel(
-        QStringLiteral("TESLA 无人机广播节点监控"),
+        QStringLiteral("无人机传输认证系统 无人机节点监控"),
         pCentralWidget
     );
     pTitleLabel->setObjectName(QStringLiteral("titleLabel"));

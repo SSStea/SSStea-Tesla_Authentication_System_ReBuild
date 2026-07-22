@@ -61,7 +61,7 @@ AttackTestMainWindow::AttackTestMainWindow(
     QWidget* pCentralWidget = new QWidget(this);
     QVBoxLayout* pRootLayout = new QVBoxLayout(pCentralWidget);
     QLabel* pTitleLabel = new QLabel(
-        QStringLiteral("TESLA 广播认证系统 · 攻击测试"),
+        QStringLiteral("无人机传输认证系统 · 攻击测试"),
         pCentralWidget
     );
     pTitleLabel->setObjectName(QStringLiteral("titleLabel"));
@@ -69,7 +69,7 @@ AttackTestMainWindow::AttackTestMainWindow(
 
     QTabWidget* pTabs = new QTabWidget(pCentralWidget);
     pTabs->addTab(pCreateDatagramPage(), QStringLiteral("报文监听"));
-    pTabs->addTab(pCreateHighRatePage(), QStringLiteral("高频无效流量"));
+    pTabs->addTab(pCreateHighRatePage(), QStringLiteral("Dos"));
     pTabs->addTab(pCreateLogPage(), QStringLiteral("日志"));
     pRootLayout->addWidget(pTabs, 1);
     setCentralWidget(pCentralWidget);
@@ -122,11 +122,11 @@ QWidget* AttackTestMainWindow::pCreateDatagramPage()
     QHBoxLayout* pModeLayout = new QHBoxLayout();
     QLabel* pModeLabel = new QLabel(QStringLiteral("广播方式"), pPage);
     m_pMessageConflictButton = new QPushButton(
-        QStringLiteral("Message冲突副本"),
+        QStringLiteral("篡改"),
         pPage
     );
     m_pDelayedDuplicateButton = new QPushButton(
-        QStringLiteral("延迟重复报文"),
+        QStringLiteral("重放"),
         pPage
     );
     m_pMessageConflictButton->setCheckable(true);
@@ -146,8 +146,8 @@ QWidget* AttackTestMainWindow::pCreateDatagramPage()
 
     QLabel* pHintLabel = new QLabel(
         QStringLiteral(
-            "Message冲突副本允许直接修改所选Message中的一位或多位；"
-            "延迟重复报文会原样广播所选数据报。"
+            "篡改允许直接修改所选Message中的一位或多位；"
+            "重放会原样广播所选数据报。"
         ),
         pPage
     );

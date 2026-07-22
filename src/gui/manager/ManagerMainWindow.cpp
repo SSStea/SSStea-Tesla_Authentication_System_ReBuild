@@ -168,13 +168,13 @@ ManagerMainWindow::ManagerMainWindow(
       m_bAuthenticationInputsValid(false),
       m_bPreparedConfigurationCurrent(false)
 {
-    setWindowTitle(QStringLiteral("TESLA 集中管理"));
+    setWindowTitle(QStringLiteral("无人机传输认证系统 集中管理"));
     resize(1280, 780);
 
     QWidget* pCentralWidget = new QWidget(this);
     QVBoxLayout* pRootLayout = new QVBoxLayout(pCentralWidget);
     QLabel* pTitleLabel = new QLabel(
-        QStringLiteral("TESLA 无人机集群广播认证系统 · 集中管理"),
+        QStringLiteral("无人机传输认证系统 · 集中管理"),
         pCentralWidget
     );
     pTitleLabel->setObjectName(QStringLiteral("titleLabel"));
