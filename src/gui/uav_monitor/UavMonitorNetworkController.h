@@ -66,7 +66,6 @@ signals:
 private:
     void processTcpData();
     void sendHello();
-    void requestAbnormalSnapshot();
     void requestMetricSnapshot();
     void appendObservation(
         const tesla::protocol::AuthenticationObservation& varObservation

@@ -73,7 +73,6 @@ UavMonitorNetworkController::UavMonitorNetworkController(
             emit logMessage(QStringLiteral("MONITOR连接已建立"));
             emit stateChanged();
             sendHello();
-            requestAbnormalSnapshot();
             requestMetricSnapshot();
             refreshStatus();
             m_pPollTimer->start();
@@ -492,14 +491,6 @@ void UavMonitorNetworkController::sendHello()
     bSendControl(NodeControlMessage(
         ClientHelloControlDetails(TcpClientRole::Monitor)
     ));
-}
-
-void UavMonitorNetworkController::requestAbnormalSnapshot()
-{
-    bSendControl(NodeControlMessage(RequestControlDetails(
-        NodeControlMessageType::AbnormalEventSnapshotRequest,
-        strRequestId(QStringLiteral("monitor-abnormal-snapshot"))
-    )));
 }
 
 void UavMonitorNetworkController::requestMetricSnapshot()
