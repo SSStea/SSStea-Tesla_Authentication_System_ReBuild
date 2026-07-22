@@ -121,7 +121,8 @@ TeslaVerificationResult ImprovedTeslaStrategy::vfyVerifyForKeys(
     const std::vector<PacketDataKeySlot>& vecPacketDataKeys,
     const crypto::Digest& digFastGroupDataKey,
     metrics::VerificationPerformanceSampler* pPerformanceSampler,
-    VerificationMeasurementHandler fnMeasurementHandler
+    VerificationMeasurementHandler fnMeasurementHandler,
+    bool bAllowFastGroupPath
 ) const
 {
     // variant类型必须与当前策略匹配，防止跨模式错误解释认证字段。
@@ -182,7 +183,7 @@ TeslaVerificationResult ImprovedTeslaStrategy::vfyVerifyForKeys(
     }
 
     // 完整组优先验证一次快速标签；成功时不再执行任何逐包MAC计算。
-    if (!grpInput.bHasMissingPackets())
+    if (bAllowFastGroupPath && !grpInput.bHasMissingPackets())
     {
         const crypto::Digest digCalculatedFastGroupTag
             = TeslaMac::digComputeFastGroupTag(

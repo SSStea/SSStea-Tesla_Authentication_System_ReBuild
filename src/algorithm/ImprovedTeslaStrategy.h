@@ -59,7 +59,8 @@ public:
         const std::vector<PacketDataKeySlot>& vecPacketDataKeys,
         const crypto::Digest& digFastGroupDataKey,
         metrics::VerificationPerformanceSampler* pPerformanceSampler = nullptr,
-        VerificationMeasurementHandler fnMeasurementHandler = {}
+        VerificationMeasurementHandler fnMeasurementHandler = {},
+        bool bAllowFastGroupPath = true
     ) const;
 
 private:

@@ -402,8 +402,8 @@ const char* pSourceTypeName(PacketSourceType typeSource)
     {
     case PacketSourceType::NormalSender:
         return "NORMAL_SENDER";
-    case PacketSourceType::AttackInjection:
-        return "ATTACK_INJECTION";
+    case PacketSourceType::AttackTest:
+        return "Attack_TEST";
     case PacketSourceType::UnknownSource:
         return "UNKNOWN_SOURCE";
     }
@@ -418,9 +418,9 @@ PacketSourceType typeSourceParse(const std::string& strSource)
         return PacketSourceType::NormalSender;
     }
 
-    if (strSource == "ATTACK_INJECTION")
+    if (strSource == "Attack_TEST" || strSource == "ATTACK_INJECTION")
     {
-        return PacketSourceType::AttackInjection;
+        return PacketSourceType::AttackTest;
     }
 
     if (strSource == "UNKNOWN_SOURCE")
@@ -479,20 +479,20 @@ const char* pFailureTypeName(AuthenticationFailureType typeFailure)
     {
     case AuthenticationFailureType::MacFailed:
         return "MAC_FAILED";
-    case AuthenticationFailureType::TamperedVariant:
-        return "TAMPERED_VARIANT";
+    case AuthenticationFailureType::MessageConflict:
+        return "MESSAGE_CONFLICT";
     case AuthenticationFailureType::FastGroupFailed:
         return "FAST_GROUP_FAILED";
     case AuthenticationFailureType::GroupTauFailed:
         return "GROUP_TAU_FAILED";
     case AuthenticationFailureType::DetectionThresholdExceeded:
         return "DETECTION_THRESHOLD_EXCEEDED";
-    case AuthenticationFailureType::ReplayDuplicate:
-        return "REPLAY_DUPLICATE";
-    case AuthenticationFailureType::ReplayLate:
-        return "REPLAY_LATE";
-    case AuthenticationFailureType::ReplayExpiredChain:
-        return "REPLAY_EXPIRED_CHAIN";
+    case AuthenticationFailureType::DuplicateDatagram:
+        return "DUPLICATE_DATAGRAM";
+    case AuthenticationFailureType::ArrivalWindowExpired:
+        return "ARRIVAL_WINDOW_EXPIRED";
+    case AuthenticationFailureType::ExpiredChainDatagram:
+        return "EXPIRED_CHAIN_DATAGRAM";
     case AuthenticationFailureType::MissingPacket:
         return "MISSING_PACKET";
     case AuthenticationFailureType::IncompleteGroupTags:
@@ -517,13 +517,17 @@ AuthenticationFailureType typeFailureParse(const std::string& strFailure)
     static const std::vector<std::pair<std::string, AuthenticationFailureType>>
         vecMappings{
             {"MAC_FAILED", AuthenticationFailureType::MacFailed},
-            {"TAMPERED_VARIANT", AuthenticationFailureType::TamperedVariant},
+            {"MESSAGE_CONFLICT", AuthenticationFailureType::MessageConflict},
+            {"TAMPERED_VARIANT", AuthenticationFailureType::MessageConflict},
             {"FAST_GROUP_FAILED", AuthenticationFailureType::FastGroupFailed},
             {"GROUP_TAU_FAILED", AuthenticationFailureType::GroupTauFailed},
             {"DETECTION_THRESHOLD_EXCEEDED", AuthenticationFailureType::DetectionThresholdExceeded},
-            {"REPLAY_DUPLICATE", AuthenticationFailureType::ReplayDuplicate},
-            {"REPLAY_LATE", AuthenticationFailureType::ReplayLate},
-            {"REPLAY_EXPIRED_CHAIN", AuthenticationFailureType::ReplayExpiredChain},
+            {"DUPLICATE_DATAGRAM", AuthenticationFailureType::DuplicateDatagram},
+            {"REPLAY_DUPLICATE", AuthenticationFailureType::DuplicateDatagram},
+            {"ARRIVAL_WINDOW_EXPIRED", AuthenticationFailureType::ArrivalWindowExpired},
+            {"REPLAY_LATE", AuthenticationFailureType::ArrivalWindowExpired},
+            {"EXPIRED_CHAIN_DATAGRAM", AuthenticationFailureType::ExpiredChainDatagram},
+            {"REPLAY_EXPIRED_CHAIN", AuthenticationFailureType::ExpiredChainDatagram},
             {"MISSING_PACKET", AuthenticationFailureType::MissingPacket},
             {"INCOMPLETE_GROUP_TAGS", AuthenticationFailureType::IncompleteGroupTags},
             {"UNVERIFIABLE_MISSING_BASELINE", AuthenticationFailureType::UnverifiableMissingBaseline},

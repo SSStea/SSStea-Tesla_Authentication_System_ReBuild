@@ -21,7 +21,7 @@ enum class PacketObservationDirection
 enum class PacketSourceType
 {
     NormalSender,
-    AttackInjection,
+    AttackTest,
     UnknownSource
 };
 
@@ -36,13 +36,13 @@ enum class PacketAuthenticationStatus
 enum class AuthenticationFailureType
 {
     MacFailed,
-    TamperedVariant,
+    MessageConflict,
     FastGroupFailed,
     GroupTauFailed,
     DetectionThresholdExceeded,
-    ReplayDuplicate,
-    ReplayLate,
-    ReplayExpiredChain,
+    DuplicateDatagram,
+    ArrivalWindowExpired,
+    ExpiredChainDatagram,
     MissingPacket,
     IncompleteGroupTags,
     UnverifiableMissingBaseline,
