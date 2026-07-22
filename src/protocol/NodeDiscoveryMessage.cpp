@@ -31,6 +31,8 @@ const char* pTypeName(NodeDiscoveryMessageType typeMessage)
         return "NODE_ANNOUNCEMENT";
     case NodeDiscoveryMessageType::Heartbeat:
         return "HEARTBEAT";
+    case NodeDiscoveryMessageType::ObservationDisplayReset:
+        return "OBSERVATION_DISPLAY_RESET";
     }
 
     throw std::invalid_argument("Unknown discovery message type");
@@ -44,8 +46,8 @@ const char* pRoleName(NodeRole roleNode)
         return "PC_BROADCAST";
     case NodeRole::Uav:
         return "UAV";
-    case NodeRole::Attacker:
-        return "ATTACKER";
+    case NodeRole::AttackTester:
+        return "Attack_TESTER";
     }
 
     throw std::invalid_argument("Unknown node role");
@@ -63,9 +65,9 @@ NodeRole roleParse(const std::string& strRole)
         return NodeRole::Uav;
     }
 
-    if (strRole == "ATTACKER")
+    if (strRole == "Attack_TESTER" || strRole == "ATTACKER")
     {
-        return NodeRole::Attacker;
+        return NodeRole::AttackTester;
     }
 
     throw std::invalid_argument("Unknown node role");
@@ -89,6 +91,19 @@ DiscoveryRequestDetails::DiscoveryRequestDetails(std::string strRequestId)
 const std::string& DiscoveryRequestDetails::strRequestId() const noexcept
 {
     return m_strRequestId;
+}
+
+ObservationDisplayResetDetails::ObservationDisplayResetDetails(
+    std::string strRoundId
+)
+    : m_strRoundId(std::move(strRoundId))
+{
+    validateIdentifier(m_strRoundId, "Observation display round ID");
+}
+
+const std::string& ObservationDisplayResetDetails::strRoundId() const noexcept
+{
+    return m_strRoundId;
 }
 
 NodePresenceDetails::NodePresenceDetails(
@@ -123,7 +138,8 @@ NodePresenceDetails::NodePresenceDetails(
     }
 
     validateIdentifier(m_strNodeName, "Node name");
-    if (m_u16ManagementPort == 0)
+    if (m_u16ManagementPort == 0
+        && m_roleNode != NodeRole::AttackTester)
     {
         throw std::invalid_argument("Management port must not be zero");
     }
@@ -181,6 +197,11 @@ NodeDiscoveryMessageType NodeDiscoveryMessage::typeMessage() const noexcept
         return NodeDiscoveryMessageType::DiscoverRequest;
     }
 
+    if (std::holds_alternative<ObservationDisplayResetDetails>(m_varDetails))
+    {
+        return NodeDiscoveryMessageType::ObservationDisplayReset;
+    }
+
     return std::get<NodePresenceDetails>(m_varDetails).typeMessage();
 }
 
@@ -199,6 +220,15 @@ std::string NodeDiscoveryJsonCodec::strEncode(const NodeDiscoveryMessage& msgMes
         jsnMessage["requestId"] = std::get<DiscoveryRequestDetails>(
             msgMessage.varDetails()
         ).strRequestId();
+        return jsnMessage.dump();
+    }
+
+    if (msgMessage.typeMessage()
+        == NodeDiscoveryMessageType::ObservationDisplayReset)
+    {
+        jsnMessage["roundId"] = std::get<ObservationDisplayResetDetails>(
+            msgMessage.varDetails()
+        ).strRoundId();
         return jsnMessage.dump();
     }
 
@@ -234,6 +264,13 @@ NodeDiscoveryDecodeResult NodeDiscoveryJsonCodec::resDecode(const std::string& s
             ));
         }
 
+        if (strType == "OBSERVATION_DISPLAY_RESET")
+        {
+            return NodeDiscoveryMessage(ObservationDisplayResetDetails(
+                jsnMessage.at("roundId").get<std::string>()
+            ));
+        }
+
         NodeDiscoveryMessageType typeMessage;
         if (strType == "NODE_ANNOUNCEMENT")
         {
@@ -250,16 +287,25 @@ NodeDiscoveryDecodeResult NodeDiscoveryJsonCodec::resDecode(const std::string& s
 
         const std::uint64_t u64ManagementPort =
             jsnMessage.at("managementPort").get<std::uint64_t>();
-        if (u64ManagementPort == 0 || u64ManagementPort > 65535U)
+        if (u64ManagementPort > 65535U)
         {
             return errCreate("Discovery management port is outside the valid range");
+        }
+
+        const NodeRole roleNode = roleParse(
+            jsnMessage.at("nodeRole").get<std::string>()
+        );
+        if (u64ManagementPort == 0
+            && roleNode != NodeRole::AttackTester)
+        {
+            return errCreate("Discovery management port is required for managed nodes");
         }
 
         return NodeDiscoveryMessage(NodePresenceDetails(
             typeMessage,
             jsnMessage.at("requestId").get<std::string>(),
             jsnMessage.at("nodeName").get<std::string>(),
-            roleParse(jsnMessage.at("nodeRole").get<std::string>()),
+            roleNode,
             static_cast<std::uint16_t>(u64ManagementPort),
             jsnMessage.at("senderRunning").get<bool>(),
             jsnMessage.at("receiverRunning").get<bool>(),

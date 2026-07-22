@@ -43,8 +43,8 @@ QString strRoleName(NodeRole roleNode)
         return QStringLiteral("PC");
     case NodeRole::Uav:
         return QStringLiteral("UAV");
-    case NodeRole::Attacker:
-        return QStringLiteral("ATTACKER");
+    case NodeRole::AttackTester:
+        return QStringLiteral("攻击测试");
     }
 
     return QStringLiteral("UNKNOWN");
@@ -172,8 +172,6 @@ struct ManagerNetworkController::EndpointState final
     ManagerConnectionState stateConnection = ManagerConnectionState::Disconnected;
     bool                   bSenderRunning = false;
     bool                   bReceiverRunning = false;
-    bool                   bMulticastListening = false;
-    bool                   bAttackRunning = false;
     qint64                 nLastPresenceMilliseconds = 0;
     int                    nAddressScore = -10000;
     QTcpSocket*            pSocket = nullptr;
@@ -190,8 +188,6 @@ ManagerNodeSnapshot::ManagerNodeSnapshot(
     ManagerConnectionState stateConnection,
     bool bSenderRunning,
     bool bReceiverRunning,
-    bool bMulticastListening,
-    bool bAttackRunning,
     qint64 nHeartbeatAgeMilliseconds
 )
     : m_strEndpointKey(std::move(strEndpointKey)),
@@ -202,8 +198,6 @@ ManagerNodeSnapshot::ManagerNodeSnapshot(
       m_stateConnection(stateConnection),
       m_bSenderRunning(bSenderRunning),
       m_bReceiverRunning(bReceiverRunning),
-      m_bMulticastListening(bMulticastListening),
-      m_bAttackRunning(bAttackRunning),
       m_nHeartbeatAgeMilliseconds(nHeartbeatAgeMilliseconds)
 {
 }
@@ -250,12 +244,12 @@ bool ManagerNodeSnapshot::bReceiverRunning() const noexcept
 
 bool ManagerNodeSnapshot::bMulticastListening() const noexcept
 {
-    return m_bMulticastListening;
+    return false;
 }
 
 bool ManagerNodeSnapshot::bAttackRunning() const noexcept
 {
-    return m_bAttackRunning;
+    return false;
 }
 
 qint64 ManagerNodeSnapshot::nHeartbeatAgeMilliseconds() const noexcept
@@ -427,7 +421,10 @@ void ManagerNetworkController::connectAll()
 {
     for (const std::shared_ptr<EndpointState>& ptrEndpoint : m_mapEndpoints)
     {
-        connectEndpoint(ptrEndpoint);
+        if (ptrEndpoint->roleNode != NodeRole::AttackTester)
+        {
+            connectEndpoint(ptrEndpoint);
+        }
     }
 }
 
@@ -458,7 +455,8 @@ void ManagerNetworkController::refreshStatus()
 {
     for (const std::shared_ptr<EndpointState>& ptrEndpoint : m_mapEndpoints)
     {
-        if (ptrEndpoint->stateConnection == ManagerConnectionState::Connected)
+        if (ptrEndpoint->roleNode != NodeRole::AttackTester
+            && ptrEndpoint->stateConnection == ManagerConnectionState::Connected)
         {
             sendStatusRequest(ptrEndpoint);
         }
@@ -473,7 +471,7 @@ bool ManagerNetworkController::bSendNodeControl(
     const std::shared_ptr<EndpointState> ptrEndpoint =
         m_mapEndpoints.value(strEndpointKey);
     if (!ptrEndpoint
-        || ptrEndpoint->roleNode == NodeRole::Attacker
+        || ptrEndpoint->roleNode == NodeRole::AttackTester
         || ptrEndpoint->stateConnection != ManagerConnectionState::Connected)
     {
         return false;
@@ -485,24 +483,38 @@ bool ManagerNetworkController::bSendNodeControl(
     );
 }
 
-bool ManagerNetworkController::bSendAttackControl(
-    const QString& strEndpointKey,
-    const AttackControlMessage& msgMessage
+bool ManagerNetworkController::bSendObservationDisplayReset(
+    const QString& strIpAddress,
+    const QString& strRoundId
 )
 {
-    const std::shared_ptr<EndpointState> ptrEndpoint =
-        m_mapEndpoints.value(strEndpointKey);
-    if (!ptrEndpoint
-        || ptrEndpoint->roleNode != NodeRole::Attacker
-        || ptrEndpoint->stateConnection != ManagerConnectionState::Connected)
+    start();
+    if (m_pScanSocket->state() != QAbstractSocket::BoundState
+        || strIpAddress.isEmpty()
+        || strRoundId.isEmpty())
     {
         return false;
     }
 
-    return bSendJsonFrame(
-        ptrEndpoint->pSocket,
-        AttackControlJsonCodec::strEncode(msgMessage)
+    const NodeDiscoveryMessage msgReset(ObservationDisplayResetDetails(
+        strRoundId.toStdString()
+    ));
+    const QByteArray arrDatagram = QByteArray::fromStdString(
+        NodeDiscoveryJsonCodec::strEncode(msgReset)
     );
+    return m_pScanSocket->writeDatagram(
+        arrDatagram,
+        QHostAddress(strIpAddress),
+        m_u16DiscoveryPort
+    ) == arrDatagram.size();
+}
+
+bool ManagerNetworkController::bSendAttackControl(
+    const QString&,
+    const AttackControlMessage&
+)
+{
+    return false;
 }
 
 bool ManagerNetworkController::bQueueFileUpload(
@@ -515,7 +527,7 @@ bool ManagerNetworkController::bQueueFileUpload(
     const std::shared_ptr<EndpointState> ptrEndpoint =
         m_mapEndpoints.value(strEndpointKey);
     if (!ptrEndpoint
-        || ptrEndpoint->roleNode == NodeRole::Attacker
+        || ptrEndpoint->roleNode == NodeRole::AttackTester
         || ptrEndpoint->stateConnection != ManagerConnectionState::Connected
         || ptrEndpoint->pSocket == nullptr
         || ptrEndpoint->optFileUpload.has_value()
@@ -576,8 +588,6 @@ QVector<ManagerNodeSnapshot> ManagerNetworkController::vecNodeSnapshots() const
             ptrEndpoint->stateConnection,
             ptrEndpoint->bSenderRunning,
             ptrEndpoint->bReceiverRunning,
-            ptrEndpoint->bMulticastListening,
-            ptrEndpoint->bAttackRunning,
             nHeartbeatAge
         );
     }
@@ -770,7 +780,9 @@ void ManagerNetworkController::connectEndpoint(
     const std::shared_ptr<EndpointState>& ptrEndpoint
 )
 {
-    if (ptrEndpoint->stateConnection != ManagerConnectionState::Disconnected)
+    if (ptrEndpoint->roleNode == NodeRole::AttackTester
+        || ptrEndpoint->u16ManagementPort == 0
+        || ptrEndpoint->stateConnection != ManagerConnectionState::Disconnected)
     {
         return;
     }
@@ -897,14 +909,7 @@ void ManagerNetworkController::processEndpointTcp(
         const std::string& strJson = std::get<JsonControlFramePayload>(
             frmFrame.varPayload()
         ).strJson();
-        if (ptrEndpoint->roleNode == NodeRole::Attacker)
-        {
-            processAttackControlFrame(ptrEndpoint, strJson);
-        }
-        else
-        {
-            processNodeControlFrame(ptrEndpoint, strJson);
-        }
+        processNodeControlFrame(ptrEndpoint, strJson);
     }
 }
 
@@ -958,6 +963,7 @@ void ManagerNetworkController::processNodeControlFrame(
     }
 }
 
+#if 0
 void ManagerNetworkController::processAttackControlFrame(
     const std::shared_ptr<EndpointState>& ptrEndpoint,
     const std::string& strJson
@@ -1005,28 +1011,18 @@ void ManagerNetworkController::processAttackControlFrame(
     }
 }
 
+#endif
+
 void ManagerNetworkController::sendHelloAndStatus(
     const std::shared_ptr<EndpointState>& ptrEndpoint
 )
 {
-    if (ptrEndpoint->roleNode == NodeRole::Attacker)
-    {
-        bSendJsonFrame(
-            ptrEndpoint->pSocket,
-            AttackControlJsonCodec::strEncode(AttackControlMessage(
-                AttackClientHelloDetails("TESLA Central Manager")
-            ))
-        );
-    }
-    else
-    {
-        bSendJsonFrame(
-            ptrEndpoint->pSocket,
-            NodeControlJsonCodec::strEncode(NodeControlMessage(
-                ClientHelloControlDetails(TcpClientRole::Manager)
-            ))
-        );
-    }
+    bSendJsonFrame(
+        ptrEndpoint->pSocket,
+        NodeControlJsonCodec::strEncode(NodeControlMessage(
+            ClientHelloControlDetails(TcpClientRole::Manager)
+        ))
+    );
 
     sendStatusRequest(ptrEndpoint);
 }
@@ -1038,30 +1034,15 @@ void ManagerNetworkController::sendStatusRequest(
     const std::string strRequestId = strCreateRequestId(
         QStringLiteral("status")
     ).toStdString();
-    if (ptrEndpoint->roleNode == NodeRole::Attacker)
-    {
-        bSendJsonFrame(
-            ptrEndpoint->pSocket,
-            AttackControlJsonCodec::strEncode(AttackControlMessage(
-                AttackRequestControlDetails(
-                    AttackControlMessageType::StatusRequest,
-                    strRequestId
-                )
-            ))
-        );
-    }
-    else
-    {
-        bSendJsonFrame(
-            ptrEndpoint->pSocket,
-            NodeControlJsonCodec::strEncode(NodeControlMessage(
-                RequestControlDetails(
-                    NodeControlMessageType::StatusRequest,
-                    strRequestId
-                )
-            ))
-        );
-    }
+    bSendJsonFrame(
+        ptrEndpoint->pSocket,
+        NodeControlJsonCodec::strEncode(NodeControlMessage(
+            RequestControlDetails(
+                NodeControlMessageType::StatusRequest,
+                strRequestId
+            )
+        ))
+    );
 }
 
 void ManagerNetworkController::checkOfflineNodes()
@@ -1087,8 +1068,6 @@ void ManagerNetworkController::checkOfflineNodes()
             ptrEndpoint->stateConnection = ManagerConnectionState::Disconnected;
             ptrEndpoint->bSenderRunning = false;
             ptrEndpoint->bReceiverRunning = false;
-            ptrEndpoint->bMulticastListening = false;
-            ptrEndpoint->bAttackRunning = false;
             bChanged = true;
         }
     }

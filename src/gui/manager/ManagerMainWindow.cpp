@@ -138,10 +138,9 @@ ManagerMainWindow::ManagerMainWindow(
     pRootLayout->addWidget(pTitleLabel);
 
     QTabWidget* pTabs = new QTabWidget(pCentralWidget);
-    pTabs->addTab(pCreateNodePage(), QStringLiteral("节点连接"));
+    pTabs->addTab(pCreateNodePage(), QStringLiteral("广播节点扫描"));
     pTabs->addTab(pCreateConfigurationPage(), QStringLiteral("参数与载荷"));
     pTabs->addTab(pCreateExperimentPage(), QStringLiteral("实验控制"));
-    pTabs->addTab(pCreateAttackPage(), QStringLiteral("认证鲁棒性测试端"));
     pTabs->addTab(pCreateFileComparisonPage(), QStringLiteral("文件Hash比较"));
     pRootLayout->addWidget(pTabs, 1);
 
@@ -716,7 +715,7 @@ QWidget* ManagerMainWindow::pCreateAttackPage()
     pLayout->addWidget(m_pAttackTable, 1);
 
     QGroupBox* pPlanGroup = new QGroupBox(
-        QStringLiteral("认证鲁棒性测试编排"),
+        QStringLiteral("认证攻击测试编排"),
         pPage
     );
     QFormLayout* pForm = new QFormLayout(pPlanGroup);
@@ -821,19 +820,8 @@ QWidget* ManagerMainWindow::pCreateStagePlaceholder(
 void ManagerMainWindow::refreshNodeTables()
 {
     const QVector<ManagerNodeSnapshot> vecSnapshots = m_ctlNetwork.vecNodeSnapshots();
-    const QString strCurrentAttackEndpoint =
-        m_pAttackEndpointCombo != nullptr
-            ? m_pAttackEndpointCombo->currentData().toString()
-            : QString();
-
     m_pNodeTable->blockSignals(true);
     m_pNodeTable->setRowCount(0);
-    m_pAttackTable->setRowCount(0);
-    if (m_pAttackEndpointCombo != nullptr)
-    {
-        m_pAttackEndpointCombo->blockSignals(true);
-        m_pAttackEndpointCombo->clear();
-    }
 
     for (const ManagerNodeSnapshot& snpNode : vecSnapshots)
     {
@@ -841,47 +829,8 @@ void ManagerMainWindow::refreshNodeTables()
             ? QStringLiteral("%1ms").arg(snpNode.nHeartbeatAgeMilliseconds())
             : QStringLiteral("未收到");
 
-        if (snpNode.roleNode() == NodeRole::Attacker)
+        if (snpNode.roleNode() == NodeRole::AttackTester)
         {
-            const int nRow = m_pAttackTable->rowCount();
-            m_pAttackTable->insertRow(nRow);
-            m_pAttackTable->setItem(nRow, 0, pReadOnlyItem(snpNode.strNodeName()));
-            m_pAttackTable->setItem(nRow, 1, pReadOnlyItem(snpNode.strIpAddress()));
-            m_pAttackTable->setItem(
-                nRow,
-                2,
-                pReadOnlyItem(strConnectionState(snpNode.stateConnection()))
-            );
-            m_pAttackTable->setItem(
-                nRow,
-                3,
-                pReadOnlyItem(strRunningState(
-                    snpNode.stateConnection(),
-                    snpNode.bMulticastListening(),
-                    QStringLiteral("监听中"),
-                    QStringLiteral("未监听")
-                ))
-            );
-            m_pAttackTable->setItem(
-                nRow,
-                4,
-                pReadOnlyItem(strRunningState(
-                    snpNode.stateConnection(),
-                    snpNode.bAttackRunning(),
-                    QStringLiteral("运行中"),
-                    QStringLiteral("空闲")
-                ))
-            );
-            m_pAttackTable->setItem(nRow, 5, pReadOnlyItem(strHeartbeat));
-            if (m_pAttackEndpointCombo != nullptr
-                && snpNode.stateConnection() == ManagerConnectionState::Connected)
-            {
-                m_pAttackEndpointCombo->addItem(
-                    snpNode.strNodeName() + QStringLiteral(" / ")
-                        + snpNode.strIpAddress(),
-                    snpNode.strEndpointKey()
-                );
-            }
             continue;
         }
 
@@ -933,19 +882,7 @@ void ManagerMainWindow::refreshNodeTables()
     }
 
     m_pNodeTable->blockSignals(false);
-    if (m_pAttackEndpointCombo != nullptr)
-    {
-        const int nIndex = m_pAttackEndpointCombo->findData(
-            strCurrentAttackEndpoint
-        );
-        if (nIndex >= 0)
-        {
-            m_pAttackEndpointCombo->setCurrentIndex(nIndex);
-        }
-        m_pAttackEndpointCombo->blockSignals(false);
-    }
     refreshFaultControls();
-    refreshAttackControls();
 }
 
 void ManagerMainWindow::validateAuthenticationInputs()
@@ -1352,8 +1289,8 @@ void ManagerMainWindow::startRound()
     const std::uint64_t u64StartTimestampMilliseconds =
         static_cast<std::uint64_t>(QDateTime::currentMSecsSinceEpoch()) + 2000U;
 
-    const bool bHasRobustnessPlan = m_ctlAttackExperiment.bReady();
-    if (bHasRobustnessPlan
+    const bool bHasAttackPlan = m_ctlAttackExperiment.bReady();
+    if (bHasAttackPlan
         && !m_ctlAttackExperiment.bStartPrepared(
             u64StartTimestampMilliseconds,
             strError
@@ -1368,7 +1305,7 @@ void ManagerMainWindow::startRound()
             strError
         ))
     {
-        if (bHasRobustnessPlan)
+        if (bHasAttackPlan)
         {
             QString strRollbackError;
             static_cast<void>(m_ctlAttackExperiment.bStopPrepared(

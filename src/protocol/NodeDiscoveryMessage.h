@@ -12,14 +12,15 @@ enum class NodeRole
 {
     PcBroadcast,
     Uav,
-    Attacker
+    AttackTester
 };
 
 enum class NodeDiscoveryMessageType
 {
     DiscoverRequest,
     NodeAnnouncement,
-    Heartbeat
+    Heartbeat,
+    ObservationDisplayReset
 };
 
 /** @brief 扫描端发出的发现请求，只携带用于关联响应的请求ID。 */
@@ -32,6 +33,18 @@ public:
 
 private:
     std::string m_strRequestId;
+};
+
+/** @brief 管理端通过发现UDP通知独立鲁棒性测试端清空上一轮监听展示。 */
+class ObservationDisplayResetDetails final
+{
+public:
+    explicit ObservationDisplayResetDetails(std::string strRoundId);
+
+    const std::string& strRoundId() const noexcept;
+
+private:
+    std::string m_strRoundId;
 };
 
 /** @brief 节点公告和心跳共同携带的在线状态快照。 */
@@ -71,6 +84,7 @@ private:
 
 using NodeDiscoveryMessageDetails = std::variant<
     DiscoveryRequestDetails,
+    ObservationDisplayResetDetails,
     NodePresenceDetails
 >;
 

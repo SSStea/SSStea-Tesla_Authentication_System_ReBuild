@@ -13,7 +13,7 @@
 #include <optional>
 
 /**
- * @brief 管理认证鲁棒性测试的公开上下文、计划确认、临时来源映射和统一启停。
+ * @brief 管理认证攻击测试的公开上下文、计划确认、临时来源映射和统一启停。
  *
  * 私有认证材料仍由ManagerAuthenticationController持有；本类只处理测试端能够
  * 获得的公开上下文，并把临时来源映射限制在当前轮次和指定Receiver集合内。

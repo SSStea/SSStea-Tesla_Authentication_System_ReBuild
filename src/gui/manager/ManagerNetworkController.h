@@ -40,8 +40,6 @@ public:
         ManagerConnectionState stateConnection,
         bool bSenderRunning,
         bool bReceiverRunning,
-        bool bMulticastListening,
-        bool bAttackRunning,
         qint64 nHeartbeatAgeMilliseconds
     );
 
@@ -66,8 +64,6 @@ private:
     ManagerConnectionState    m_stateConnection;
     bool                      m_bSenderRunning;
     bool                      m_bReceiverRunning;
-    bool                      m_bMulticastListening;
-    bool                      m_bAttackRunning;
     qint64                    m_nHeartbeatAgeMilliseconds;
 };
 
@@ -103,6 +99,10 @@ public:
     bool bSendNodeControl(
         const QString& strEndpointKey,
         const tesla::protocol::NodeControlMessage& msgMessage
+    );
+    bool bSendObservationDisplayReset(
+        const QString& strIpAddress,
+        const QString& strRoundId
     );
     bool bSendAttackControl(
         const QString& strEndpointKey,
@@ -141,10 +141,6 @@ private:
     void connectEndpoint(const std::shared_ptr<EndpointState>& ptrEndpoint);
     void processEndpointTcp(const std::shared_ptr<EndpointState>& ptrEndpoint);
     void processNodeControlFrame(
-        const std::shared_ptr<EndpointState>& ptrEndpoint,
-        const std::string& strJson
-    );
-    void processAttackControlFrame(
         const std::shared_ptr<EndpointState>& ptrEndpoint,
         const std::string& strJson
     );

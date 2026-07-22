@@ -112,7 +112,7 @@ bool ManagerAttackExperimentController::bPrepareContext(
         for (const ManagerNodeSnapshot& snpNode : m_ctlNetwork.vecNodeSnapshots())
         {
             if (snpNode.strEndpointKey() == strTestEndpointKey
-                && snpNode.roleNode() == NodeRole::Attacker
+                && snpNode.roleNode() == NodeRole::AttackTester
                 && snpNode.stateConnection() == ManagerConnectionState::Connected)
             {
                 optTestNode = snpNode;
@@ -173,7 +173,7 @@ bool ManagerAttackExperimentController::bStartPrepared(
 {
     if (!m_bReady || !m_optPlan.has_value())
     {
-        strError = QStringLiteral("认证鲁棒性计划尚未完成确认");
+        strError = QStringLiteral("认证攻击计划尚未完成确认");
         return false;
     }
     if (u64StartTimestampMilliseconds <= u64NowMilliseconds() + 100U)
@@ -209,7 +209,7 @@ bool ManagerAttackExperimentController::bStopPrepared(
             emit stateChanged();
             return true;
         }
-        strError = QStringLiteral("当前没有可停止的认证鲁棒性计划");
+        strError = QStringLiteral("当前没有可停止的认证攻击计划");
         return false;
     }
 
@@ -346,7 +346,7 @@ void ManagerAttackExperimentController::processAttackControlJson(
                     "Another robustness plan is already active"
                 ))
             ));
-            emit message(QStringLiteral("已拒绝重复提交的认证鲁棒性计划"));
+            emit message(QStringLiteral("已拒绝重复提交的认证攻击计划"));
             return;
         }
         if (!m_optContext.has_value()
@@ -549,7 +549,7 @@ void ManagerAttackExperimentController::handleNodesChanged()
         m_bReady = false;
         m_bPlanPending = false;
         emit message(QStringLiteral(
-            "Receiver %1 连接中断，认证鲁棒性执行已紧急停止"
+            "Receiver %1 连接中断，认证攻击执行已紧急停止"
         ).arg(strDisconnectedReceiver));
         emit stateChanged();
     }
@@ -649,7 +649,7 @@ bool ManagerAttackExperimentController::bSendPreparedCommand(
 {
     if (!m_optPlan.has_value())
     {
-        strError = QStringLiteral("认证鲁棒性计划不存在");
+        strError = QStringLiteral("认证攻击计划不存在");
         return false;
     }
     const AttackRoundCommandControlDetails detCommand(

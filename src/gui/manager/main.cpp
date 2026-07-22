@@ -20,7 +20,9 @@ int main(int nArgc, char* arrArgv[])
     });
     prsCommandLine.addOption({
         QStringLiteral("stage5-connection-test"),
-        QStringLiteral("Discover and connect one PC node and one attack endpoint.")
+        QStringLiteral(
+            "Connect one broadcast node and discover one background robustness endpoint."
+        )
     });
     prsCommandLine.addOption({
         QStringLiteral("discovery-port"),
@@ -94,7 +96,7 @@ int main(int nArgc, char* arrArgv[])
             [&appApplication, &ctlNetwork]()
             {
                 bool bPcConnected = false;
-                bool bAttackConnected = false;
+                bool bAttackDiscovered = false;
                 for (const ManagerNodeSnapshot& snpNode
                     : ctlNetwork.vecNodeSnapshots())
                 {
@@ -104,7 +106,6 @@ int main(int nArgc, char* arrArgv[])
                         << " port=" << snpNode.u16ManagementPort()
                         << " state=" << static_cast<int>(snpNode.stateConnection())
                         << " receiver=" << snpNode.bReceiverRunning()
-                        << " multicast=" << snpNode.bMulticastListening()
                         << std::endl;
 
                     if (snpNode.roleNode() == tesla::protocol::NodeRole::PcBroadcast
@@ -115,16 +116,18 @@ int main(int nArgc, char* arrArgv[])
                         bPcConnected = true;
                     }
                     else if (snpNode.roleNode()
-                            == tesla::protocol::NodeRole::Attacker
+                            == tesla::protocol::NodeRole::AttackTester
                         && snpNode.stateConnection()
-                            == ManagerConnectionState::Connected
-                        && snpNode.bMulticastListening())
+                            == ManagerConnectionState::Disconnected
+                        && snpNode.u16ManagementPort() == 0)
                     {
-                        bAttackConnected = true;
+                        bAttackDiscovered = true;
                     }
                 }
 
-                appApplication.exit(bPcConnected && bAttackConnected ? 0 : 1);
+                appApplication.exit(
+                    bPcConnected && bAttackDiscovered ? 0 : 1
+                );
             }
         );
         return appApplication.exec();

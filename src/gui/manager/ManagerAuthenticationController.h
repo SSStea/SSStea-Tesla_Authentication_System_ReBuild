@@ -194,6 +194,11 @@ private:
         std::uint32_t u32LogicalIntervalIndex,
         QString& strError
     );
+    bool bSendAttackSourceMappings(
+        const QString& strReceiverEndpointKey,
+        const QString& strSourceIpAddress,
+        QString& strError
+    );
     tesla::protocol::AuthenticationRoundControlParameters
         prmControlParameters(
             const tesla::core::AuthenticationRoundParameters& prmParameters

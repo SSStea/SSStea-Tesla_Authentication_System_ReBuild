@@ -88,6 +88,42 @@ std::uint64_t u64NowMilliseconds()
 {
     return static_cast<std::uint64_t>(QDateTime::currentMSecsSinceEpoch());
 }
+
+std::optional<QString> optAttackSourceIp(
+    const QVector<ManagerNodeSnapshot>& vecNodeSnapshots
+)
+{
+    QSet<QString> setAddresses;
+    QSet<QString> setEndpointKeys;
+    for (const ManagerNodeSnapshot& snpNode : vecNodeSnapshots)
+    {
+        if (snpNode.roleNode()
+                != protocol::NodeRole::AttackTester
+            || snpNode.strIpAddress().isEmpty()
+            || snpNode.nHeartbeatAgeMilliseconds() < 0
+            || snpNode.nHeartbeatAgeMilliseconds() > 3000)
+        {
+            continue;
+        }
+
+        setAddresses.insert(snpNode.strIpAddress());
+        setEndpointKeys.insert(snpNode.strEndpointKey());
+    }
+
+    if (setEndpointKeys.size() > 1)
+    {
+        throw std::invalid_argument(
+            "Only one robustness test endpoint may be online"
+        );
+    }
+
+    if (setAddresses.isEmpty())
+    {
+        return std::nullopt;
+    }
+
+    return *setAddresses.constBegin();
+}
 }
 
 ManagerTextRoundConfiguration::ManagerTextRoundConfiguration(
@@ -353,10 +389,13 @@ bool ManagerAuthenticationController::bPrepareTextRound(
         resetPreparedRound();
         m_bFileRound = false;
         m_strRoundId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const std::optional<QString> optAttackIp =
+            optAttackSourceIp(vecNodeSnapshots);
         std::map<QString, ManagerNodeSnapshot> mapSnapshots;
         for (const ManagerNodeSnapshot& snpNode : vecNodeSnapshots)
         {
-            if (snpNode.roleNode() != tesla::protocol::NodeRole::Attacker
+            if (snpNode.roleNode()
+                    != tesla::protocol::NodeRole::AttackTester
                 && snpNode.stateConnection()
                     == ManagerConnectionState::Connected)
             {
@@ -532,13 +571,32 @@ bool ManagerAuthenticationController::bPrepareTextRound(
                 return false;
             }
 
+            if (optAttackIp.has_value()
+                && !bSendAttackSourceMappings(
+                    strEndpointKey,
+                    *optAttackIp,
+                    strError
+                ))
+            {
+                resetPreparedRound();
+                return false;
+            }
+
             m_nExpectedResultCount += vecReceiverContexts.size();
         }
         m_nExpectedResultCount += m_vecSenderTargets.size();
 
+        if (optAttackIp.has_value())
+        {
+            static_cast<void>(m_ctlNetwork.bSendObservationDisplayReset(
+                *optAttackIp,
+                m_strRoundId
+            ));
+        }
+
         emit configurationStateChanged(
             false,
-            QStringLiteral("配置已下发，等待 %1 个节点确认")
+            QStringLiteral("配置已下发，等待 %1 项配置确认")
                 .arg(m_setPendingConfigurationRequests.size())
         );
         return true;
@@ -570,10 +628,13 @@ bool ManagerAuthenticationController::bPrepareFileRound(
         resetPreparedRound();
         m_bFileRound = true;
         m_strRoundId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const std::optional<QString> optAttackIp =
+            optAttackSourceIp(vecNodeSnapshots);
         std::map<QString, ManagerNodeSnapshot> mapSnapshots;
         for (const ManagerNodeSnapshot& snpNode : vecNodeSnapshots)
         {
-            if (snpNode.roleNode() != tesla::protocol::NodeRole::Attacker
+            if (snpNode.roleNode()
+                    != tesla::protocol::NodeRole::AttackTester
                 && snpNode.stateConnection()
                     == ManagerConnectionState::Connected)
             {
@@ -743,13 +804,32 @@ bool ManagerAuthenticationController::bPrepareFileRound(
                 resetPreparedRound();
                 return false;
             }
+
+            if (optAttackIp.has_value()
+                && !bSendAttackSourceMappings(
+                    strEndpointKey,
+                    *optAttackIp,
+                    strError
+                ))
+            {
+                resetPreparedRound();
+                return false;
+            }
             m_nExpectedResultCount += vecReceiverContexts.size();
         }
         m_nExpectedResultCount += m_vecSenderTargets.size();
 
+        if (optAttackIp.has_value())
+        {
+            static_cast<void>(m_ctlNetwork.bSendObservationDisplayReset(
+                *optAttackIp,
+                m_strRoundId
+            ));
+        }
+
         emit configurationStateChanged(
             false,
-            QStringLiteral("文件与配置已下发，等待 %1 个节点确认")
+            QStringLiteral("文件与配置已下发，等待 %1 项配置确认")
                 .arg(m_setPendingConfigurationRequests.size())
         );
         return true;
@@ -1185,6 +1265,31 @@ void ManagerAuthenticationController::processNodeControlJson(
         const QString strRequestId = QString::fromStdString(
             detAck.strRequestId()
         );
+        if (m_setPendingConfigurationRequests.remove(strRequestId))
+        {
+            if (!detAck.bAccepted())
+            {
+                m_bConfigurationRejected = true;
+                emit configurationStateChanged(
+                    false,
+                    QStringLiteral("节点拒绝来源映射：%1")
+                        .arg(tesla::gui::strAuthenticationReasonDisplay(
+                            detAck.strMessage()
+                        ))
+                );
+            }
+            else if (m_setPendingConfigurationRequests.isEmpty()
+                     && !m_bConfigurationRejected)
+            {
+                m_bConfigurationReady = true;
+                emit configurationStateChanged(
+                    true,
+                    QStringLiteral("全部Sender和Receiver配置已确认")
+                );
+            }
+            return;
+        }
+
         if (!m_setPendingFaultRequests.remove(strRequestId))
         {
             return;
@@ -1472,6 +1577,51 @@ bool ManagerAuthenticationController::bBroadcastRoundCommand(
         strError = QStringLiteral("向以下节点下发轮次命令失败：%1")
             .arg(listFailedEndpoints.join(QStringLiteral("、")));
         return false;
+    }
+
+    return true;
+}
+
+bool ManagerAuthenticationController::bSendAttackSourceMappings(
+    const QString& strReceiverEndpointKey,
+    const QString& strSourceIpAddress,
+    QString& strError
+)
+{
+    const std::uint64_t u64ExpiryMilliseconds = u64NowMilliseconds()
+        + static_cast<std::uint64_t>(m_u32LastLogicalInterval)
+            * m_u32IntervalMilliseconds
+        + 60000U;
+
+    for (const SenderTarget& tgtSender : m_vecSenderTargets)
+    {
+        if (tgtSender.strEndpointKey == strReceiverEndpointKey)
+        {
+            continue;
+        }
+
+        const QString strRequestId = strCreateRequestId(
+            QStringLiteral("robustness-source")
+        );
+        const tesla::protocol::AttackSourceMappingControlDetails detMapping(
+            strRequestId.toStdString(),
+            m_strRoundId.toStdString(),
+            tesla::protocol::AttackSourceMappingAction::Install,
+            tgtSender.matMaterial.strSenderId(),
+            tgtSender.strIpAddress.toStdString(),
+            strSourceIpAddress.toStdString(),
+            tgtSender.matMaterial.u64ChainId(),
+            u64ExpiryMilliseconds
+        );
+        if (!bSendRequired(
+                strReceiverEndpointKey,
+                tesla::protocol::NodeControlMessage(detMapping),
+                strRequestId,
+                strError
+            ))
+        {
+            return false;
+        }
     }
 
     return true;
