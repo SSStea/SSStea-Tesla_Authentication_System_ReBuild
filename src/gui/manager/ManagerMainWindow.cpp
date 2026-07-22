@@ -1068,7 +1068,7 @@ void ManagerMainWindow::refreshSelectedFileInformation()
     // 参数变化后同步刷新全部自动值，避免界面仍显示选择文件时的旧估算。
     m_pFileInfoLabel->setText(
         QStringLiteral(
-            "文件：%1\n类型：%2，大小：%3B，Message：固定32B，分片：%4，"
+            "文件：%1\n类型：%2，大小：%3B，Message：固定32B，报文数：%4，"
             "数据间隔：%5，链长度：%6，预计数据发送：%7ms，"
             "预计认证完成：%8ms\n原始SHA-256：%9"
         )
