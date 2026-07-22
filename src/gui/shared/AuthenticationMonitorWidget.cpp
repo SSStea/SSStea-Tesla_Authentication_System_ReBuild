@@ -196,7 +196,7 @@ public:
 
     int columnCount(const QModelIndex& = QModelIndex()) const override
     {
-        return 6;
+        return 7;
     }
 
     QVariant headerData(
@@ -209,8 +209,8 @@ public:
         {
             return {};
         }
-        static const std::array<const char*, 6> HEADERS{
-            "时间", "方向", "Sender", "密钥编号", "报文长度", "结果"
+        static const std::array<const char*, 7> HEADERS{
+            "时间", "方向", "Sender", "报文编号", "密钥编号", "报文长度", "结果"
         };
         return QString::fromUtf8(HEADERS.at(static_cast<std::size_t>(nSection)));
     }
@@ -250,10 +250,12 @@ public:
             case 2:
                 return QString::fromStdString(pFailure->strSenderId());
             case 3:
-                return QStringLiteral("K%1").arg(pFailure->u32IntervalIndex());
+                return QString::number(pFailure->u32PacketIndex());
             case 4:
-                return QStringLiteral("—");
+                return QStringLiteral("K%1").arg(pFailure->u32IntervalIndex());
             case 5:
+                return QStringLiteral("—");
+            case 6:
                 return bIsMissingFailure(pFailure->typeFailure())
                     ? QStringLiteral("丢包")
                     : QStringLiteral("MAC/分组校验失败");
@@ -296,6 +298,8 @@ public:
         case 2:
             return QString::fromStdString(detPacket.strSenderId());
         case 3:
+            return QString::number(detPacket.u32PacketIndex());
+        case 4:
         {
             const std::uint32_t u32DisclosedKeyIndex =
                 detPacket.u32IntervalIndex() > detPacket.u32DisclosureDelay()
@@ -317,11 +321,11 @@ public:
                     .arg(u32DisclosedKeyIndex)
                 : QStringLiteral("K%1").arg(detPacket.u32IntervalIndex());
         }
-        case 4:
+        case 5:
             return QStringLiteral("%1 B").arg(static_cast<qulonglong>(
                 detPacket.vecRawDatagram().size()
             ));
-        case 5:
+        case 6:
         {
             const auto itrFailures = m_mapPacketFailures.find(
                 detPacket.u64EventId()
