@@ -64,6 +64,25 @@ QString strRunningState(
     return bRunning ? strRunning : strIdle;
 }
 
+QString strEstimatedDuration(std::uint64_t u64DurationMilliseconds)
+{
+    const std::uint64_t u64TotalSeconds =
+        (u64DurationMilliseconds + 999U) / 1000U;
+    const std::uint64_t u64Minutes = u64TotalSeconds / 60U;
+    const std::uint64_t u64Seconds = u64TotalSeconds % 60U;
+
+    if (u64Minutes == 0U)
+    {
+        return QStringLiteral("%1秒").arg(u64Seconds);
+    }
+    if (u64Seconds == 0U)
+    {
+        return QStringLiteral("%1分钟").arg(u64Minutes);
+    }
+
+    return QStringLiteral("%1分钟%2秒").arg(u64Minutes).arg(u64Seconds);
+}
+
 QTableWidgetItem* pReadOnlyItem(const QString& strText)
 {
     QTableWidgetItem* pItem = new QTableWidgetItem(strText);
@@ -1069,16 +1088,16 @@ void ManagerMainWindow::refreshSelectedFileInformation()
     m_pFileInfoLabel->setText(
         QStringLiteral(
             "文件：%1\n类型：%2，大小：%3B，Message：固定32B，报文数：%4，"
-            "数据间隔：%5，链长度：%6，预计数据发送：%7ms，"
-            "预计认证完成：%8ms\n原始SHA-256：%9"
+            "数据间隔：%5，链长度：%6，预计数据发送：%7，"
+            "预计认证完成：%8\n原始SHA-256：%9"
         )
             .arg(infFile.fileName(), infFile.suffix().toLower())
             .arg(m_ptrSelectedFileBytes->size())
             .arg(u64PacketCount)
             .arg(u64IntervalCount)
             .arg(u64IntervalCount + 1U)
-            .arg(u64EstimatedDataDuration)
-            .arg(u64EstimatedCompleteDuration)
+            .arg(strEstimatedDuration(u64EstimatedDataDuration))
+            .arg(strEstimatedDuration(u64EstimatedCompleteDuration))
             .arg(QString::fromLatin1(m_arrSelectedFileSha256.toHex()))
     );
 }
