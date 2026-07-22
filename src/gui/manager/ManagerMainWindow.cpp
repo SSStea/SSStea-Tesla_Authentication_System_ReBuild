@@ -1561,6 +1561,16 @@ void ManagerMainWindow::applyStyle()
             background: #2563eb;
             border-color: #2563eb;
         }
+        QPushButton:hover {
+            color: #1d4ed8;
+            background: #dbeafe;
+            border-color: #2563eb;
+        }
+        QPushButton:focus, QPushButton:pressed, QPushButton:checked {
+            color: white;
+            background: #2563eb;
+            border-color: #2563eb;
+        }
         QPushButton:disabled {
             color: #94a3b8;
             background: #eef2f7;

@@ -480,9 +480,16 @@ void AttackTestMainWindow::applyStyle()
             background: white; border: 1px solid #d7e0ec; border-radius: 4px;
         }
         QPushButton { min-height: 32px; padding: 0 18px; border: 1px solid #c8d4e3; border-radius: 5px; background: white; }
-        QPushButton:hover { border-color: #2b67e8; }
-        QPushButton#modeButton:checked, QPushButton#primaryButton {
-            color: white; border-color: #2b67e8; background: #2b67e8;
+        QPushButton:hover {
+            color: #1d4ed8;
+            background: #dbeafe;
+            border-color: #2563eb;
+        }
+        QPushButton:focus, QPushButton:pressed,
+        QPushButton:checked, QPushButton#primaryButton {
+            color: white;
+            background: #2563eb;
+            border-color: #2563eb;
         }
         QPushButton:disabled { color: #9aa8ba; background: #edf1f6; }
         QHeaderView::section { background: #eef3f9; border: 0; border-right: 1px solid #d7e0ec; padding: 7px; font-weight: 600; }
