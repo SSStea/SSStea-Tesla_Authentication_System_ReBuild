@@ -60,6 +60,7 @@ signals:
     void statusUpdated();
     void logMessage(const QString& strMessage);
     void fileStatusMessage(const QString& strMessage);
+    void senderConfigurationReceived();
     void authenticationObservationsChanged();
     void authenticationMetricsChanged();
 

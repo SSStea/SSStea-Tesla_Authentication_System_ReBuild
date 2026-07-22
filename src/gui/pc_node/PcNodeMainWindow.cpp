@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QGridLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -84,6 +85,12 @@ PcNodeMainWindow::PcNodeMainWindow(
     );
     connect(
         &m_ctlNetwork,
+        &PcNodeNetworkController::senderConfigurationReceived,
+        this,
+        &PcNodeMainWindow::showSenderConfigurationReceived
+    );
+    connect(
+        &m_ctlNetwork,
         &PcNodeNetworkController::authenticationObservationsChanged,
         this,
         &PcNodeMainWindow::refreshAuthenticationViews
@@ -101,6 +108,21 @@ PcNodeMainWindow::PcNodeMainWindow(
     }
     refreshStatus();
     refreshAuthenticationViews();
+}
+
+void PcNodeMainWindow::showSenderConfigurationReceived()
+{
+    QMessageBox* pMessage = new QMessageBox(this);
+    pMessage->setAttribute(Qt::WA_DeleteOnClose);
+    pMessage->setWindowTitle(QStringLiteral("配置接收成功"));
+    pMessage->setIcon(QMessageBox::Information);
+    pMessage->setText(QStringLiteral("Sender 已接收到本轮配置"));
+    pMessage->setInformativeText(QStringLiteral(
+        "请等待管理单元启动认证轮次。"
+    ));
+    pMessage->addButton(QStringLiteral("确定"), QMessageBox::AcceptRole);
+    pMessage->setMinimumSize(360, 170);
+    pMessage->open();
 }
 
 QWidget* PcNodeMainWindow::pCreateStatusPage()

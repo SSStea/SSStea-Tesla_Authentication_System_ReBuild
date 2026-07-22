@@ -34,6 +34,7 @@ private:
     QWidget* pCreateLogPage();
     void refreshStatus();
     void appendLog(const QString& strMessage);
+    void showSenderConfigurationReceived();
     void refreshAuthenticationViews();
     void refreshAuthenticationMetrics();
     void applyStyle();

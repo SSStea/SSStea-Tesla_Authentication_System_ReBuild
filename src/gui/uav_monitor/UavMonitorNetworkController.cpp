@@ -392,8 +392,17 @@ void UavMonitorNetworkController::processTcpData()
         else if (msgMessage.typeMessage()
             == NodeControlMessageType::ObservationDisplayResetEvent)
         {
+            const auto& detReset = std::get<
+                ObservationDisplayResetControlDetails
+            >(msgMessage.varDetails());
             m_stoObservations.clear();
             emit authenticationObservationsChanged();
+            if (QString::fromStdString(detReset.strRequestId()).startsWith(
+                    QStringLiteral("sender-config-")
+                ))
+            {
+                emit senderConfigurationReceived();
+            }
         }
         else if (msgMessage.typeMessage()
             == NodeControlMessageType::PacketObservationEvent)

@@ -1032,8 +1032,17 @@ void PcNodeNetworkController::processAuthenticationRuntimeEvent(
     if (msgMessage.typeMessage()
         == NodeControlMessageType::ObservationDisplayResetEvent)
     {
+        const auto& detReset = std::get<
+            ObservationDisplayResetControlDetails
+        >(msgMessage.varDetails());
         emit authenticationObservationsChanged();
         emit stateChanged();
+        if (QString::fromStdString(detReset.strRequestId()).startsWith(
+                QStringLiteral("sender-config-")
+            ))
+        {
+            emit senderConfigurationReceived();
+        }
         return;
     }
 

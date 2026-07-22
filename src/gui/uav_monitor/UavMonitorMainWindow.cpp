@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTabWidget>
@@ -97,6 +98,12 @@ UavMonitorMainWindow::UavMonitorMainWindow(
     );
     connect(
         &m_ctlNetwork,
+        &UavMonitorNetworkController::senderConfigurationReceived,
+        this,
+        &UavMonitorMainWindow::showSenderConfigurationReceived
+    );
+    connect(
+        &m_ctlNetwork,
         &UavMonitorNetworkController::authenticationObservationsChanged,
         this,
         &UavMonitorMainWindow::refreshAuthenticationViews
@@ -113,6 +120,21 @@ UavMonitorMainWindow::UavMonitorMainWindow(
 }
 
 UavMonitorMainWindow::~UavMonitorMainWindow() = default;
+
+void UavMonitorMainWindow::showSenderConfigurationReceived()
+{
+    QMessageBox* pMessage = new QMessageBox(this);
+    pMessage->setAttribute(Qt::WA_DeleteOnClose);
+    pMessage->setWindowTitle(QStringLiteral("配置接收成功"));
+    pMessage->setIcon(QMessageBox::Information);
+    pMessage->setText(QStringLiteral("Sender 已接收到本轮配置"));
+    pMessage->setInformativeText(QStringLiteral(
+        "请等待管理单元启动认证轮次。"
+    ));
+    pMessage->addButton(QStringLiteral("确定"), QMessageBox::AcceptRole);
+    pMessage->setMinimumSize(360, 170);
+    pMessage->open();
+}
 
 QWidget* UavMonitorMainWindow::pCreateConnectionPage()
 {
