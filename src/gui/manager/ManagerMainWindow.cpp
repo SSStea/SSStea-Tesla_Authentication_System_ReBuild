@@ -83,6 +83,40 @@ QString strEstimatedDuration(std::uint64_t u64DurationMilliseconds)
     return QStringLiteral("%1分钟%2秒").arg(u64Minutes).arg(u64Seconds);
 }
 
+QString strByteSize(std::uint64_t u64ByteCount)
+{
+    constexpr std::uint64_t KILOBYTE_SIZE = 1000U;
+    constexpr std::uint64_t MEGABYTE_SIZE = 1000U * KILOBYTE_SIZE;
+
+    if (u64ByteCount < KILOBYTE_SIZE)
+    {
+        return QStringLiteral("%1B").arg(u64ByteCount);
+    }
+
+    const bool          bUseMegabytes = u64ByteCount >= MEGABYTE_SIZE;
+    const int           nDecimalPlaces = bUseMegabytes ? 2 : 3;
+    const std::uint64_t u64UnitSize = bUseMegabytes
+        ? MEGABYTE_SIZE
+        : KILOBYTE_SIZE;
+    QString             strValue = QString::number(
+        static_cast<double>(u64ByteCount) / static_cast<double>(u64UnitSize),
+        'f',
+        nDecimalPlaces
+    );
+    while (strValue.endsWith(QLatin1Char('0')))
+    {
+        strValue.chop(1);
+    }
+    if (strValue.endsWith(QLatin1Char('.')))
+    {
+        strValue.chop(1);
+    }
+
+    return strValue + (bUseMegabytes
+        ? QStringLiteral("MB")
+        : QStringLiteral("KB"));
+}
+
 QTableWidgetItem* pReadOnlyItem(const QString& strText)
 {
     QTableWidgetItem* pItem = new QTableWidgetItem(strText);
@@ -430,7 +464,9 @@ QWidget* ManagerMainWindow::pCreateConfigurationPage()
     m_pSelectFileButton = new QPushButton(QStringLiteral("选择文件"), pPayloadGroup);
     pPayloadLayout->addWidget(m_pSelectFileButton);
     m_pFileInfoLabel = new QLabel(
-        QStringLiteral("尚未选择文件；最大支持6,400,000B"),
+        QStringLiteral("尚未选择文件；最大支持%1").arg(strByteSize(
+            tesla::workload::FileWorkload::MAXIMUM_FILE_SIZE
+        )),
         pPayloadGroup
     );
     m_pFileInfoLabel->setWordWrap(true);
@@ -881,9 +917,11 @@ void ManagerMainWindow::validateAuthenticationInputs()
     }
     if (!bFileValid)
     {
-        listErrors.append(QStringLiteral(
-            "请选择1至6,400,000字节的完整文件"
-        ));
+        listErrors.append(
+            QStringLiteral("请选择1B至%1的完整文件").arg(strByteSize(
+                tesla::workload::FileWorkload::MAXIMUM_FILE_SIZE
+            ))
+        );
     }
 
     const auto fnSetInvalid = [](QWidget* pWidget, bool bInvalid)
@@ -950,11 +988,11 @@ void ManagerMainWindow::validateAuthenticationInputs()
                 u64DataIntervalCount
             );
         const QString strNativeFormula = QStringLiteral(
-            "TESLA：C = 32B × (2N + I) = 32B × (2 × %1 + %2) = %3B"
+            "TESLA：C = 32B × (2N + I) = 32B × (2 × %1 + %2) = %3"
         )
             .arg(u64PacketCount)
             .arg(u64DataIntervalCount)
-            .arg(sumNativeCommunication.u64TotalBytes());
+            .arg(strByteSize(sumNativeCommunication.u64TotalBytes()));
 
         std::uint64_t u64SelectedTotalBytes =
             sumNativeCommunication.u64TotalBytes();
@@ -984,13 +1022,13 @@ void ManagerMainWindow::validateAuthenticationInputs()
                 );
             strImprovedFormula = QStringLiteral(
                 "S-TESLA：C = 32B × [N + I + G × (τ + 1)] "
-                "= 32B × [%1 + %2 + %3 × (%4 + 1)] = %5B"
+                "= 32B × [%1 + %2 + %3 × (%4 + 1)] = %5"
             )
                 .arg(u64PacketCount)
                 .arg(u64DataIntervalCount)
                 .arg(u64GroupCount)
                 .arg(static_cast<qulonglong>(prmImproved.nTauCount()))
-                .arg(sumImprovedCommunication.u64TotalBytes());
+                .arg(strByteSize(sumImprovedCommunication.u64TotalBytes()));
 
             if (bImproved)
             {
@@ -1007,7 +1045,7 @@ void ManagerMainWindow::validateAuthenticationInputs()
 
         m_pCommunicationValue->setText(
             QStringLiteral(
-                "认证模式：%1\n通信开销总字节数：%2B\n%3\n%4\n"
+                "认证模式：%1\n通信开销总大小：%2\n%3\n%4\n"
                 "N=报文数，I=数据间隔数，G=认证分组数，τ=每组分组标签数量；"
                 "仅统计认证算法字段，不含UDP/TCP头和序列化字段。"
             )
@@ -1016,7 +1054,7 @@ void ManagerMainWindow::validateAuthenticationInputs()
                         ? QStringLiteral("S-TESLA")
                         : QStringLiteral("TESLA")
                 )
-                .arg(u64SelectedTotalBytes)
+                .arg(strByteSize(u64SelectedTotalBytes))
                 .arg(strNativeFormula)
                 .arg(strImprovedFormula)
         );
@@ -1066,9 +1104,11 @@ void ManagerMainWindow::selectFile()
             tesla::workload::FileWorkload::MAXIMUM_FILE_SIZE
         ))
     {
-        m_pStatusLabel->setText(QStringLiteral(
-            "文件必须存在且大小为1至6,400,000字节"
-        ));
+        m_pStatusLabel->setText(
+            QStringLiteral("文件必须存在且大小为1B至%1").arg(strByteSize(
+                tesla::workload::FileWorkload::MAXIMUM_FILE_SIZE
+            ))
+        );
         return;
     }
 
@@ -1100,9 +1140,11 @@ void ManagerMainWindow::refreshSelectedFileInformation()
 {
     if (!m_ptrSelectedFileBytes)
     {
-        m_pFileInfoLabel->setText(QStringLiteral(
-            "尚未选择文件；最大支持6,400,000B"
-        ));
+        m_pFileInfoLabel->setText(
+            QStringLiteral("尚未选择文件；最大支持%1").arg(strByteSize(
+                tesla::workload::FileWorkload::MAXIMUM_FILE_SIZE
+            ))
+        );
         return;
     }
 
@@ -1128,12 +1170,14 @@ void ManagerMainWindow::refreshSelectedFileInformation()
     // 参数变化后同步刷新全部自动值，避免界面仍显示选择文件时的旧估算。
     m_pFileInfoLabel->setText(
         QStringLiteral(
-            "文件：%1\n类型：%2，大小：%3B，Message：固定32B，报文数：%4，"
+            "文件：%1\n类型：%2，大小：%3，Message：固定32B，报文数：%4，"
             "数据间隔：%5，链长度：%6，预计数据发送：%7，"
             "预计认证完成：%8\n原始SHA-256：%9"
         )
             .arg(infFile.fileName(), infFile.suffix().toLower())
-            .arg(m_ptrSelectedFileBytes->size())
+            .arg(strByteSize(static_cast<std::uint64_t>(
+                m_ptrSelectedFileBytes->size()
+            )))
             .arg(u64PacketCount)
             .arg(u64IntervalCount)
             .arg(u64IntervalCount + 1U)
