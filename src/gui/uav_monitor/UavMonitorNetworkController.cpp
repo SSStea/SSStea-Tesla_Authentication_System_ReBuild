@@ -1,5 +1,7 @@
 #include "UavMonitorNetworkController.h"
 
+#include "gui/shared/AuthenticationDisplayText.h"
+
 #include "protocol/NodeControlJsonCodec.h"
 #include "protocol/NodeControlMessage.h"
 
@@ -299,8 +301,12 @@ void UavMonitorNetworkController::processTcpData()
                 std::get<ErrorResponseControlDetails>(msgMessage.varDetails());
             emit logMessage(QStringLiteral("无人机节点返回错误 %1：%2")
                 .arg(
-                    QString::fromStdString(detError.strErrorCode()),
-                    QString::fromStdString(detError.strMessage())
+                    tesla::gui::strAuthenticationErrorCodeDisplay(
+                        detError.strErrorCode()
+                    ),
+                    tesla::gui::strAuthenticationReasonDisplay(
+                        detError.strMessage()
+                    )
                 ));
         }
         else if (msgMessage.typeMessage() == NodeControlMessageType::RoundResult)
@@ -345,7 +351,9 @@ void UavMonitorNetworkController::processTcpData()
                     .arg(QString::fromStdString(detResult.strSenderId()))
                     .arg(detResult.u64ChainId())
                     .arg(strPayloadSummary, strRecoveredHash)
-                    .arg(QString::fromStdString(detResult.strMessage())));
+                    .arg(tesla::gui::strAuthenticationReasonDisplay(
+                        detResult.strMessage()
+                    )));
             }
             else
             {
@@ -360,7 +368,9 @@ void UavMonitorNetworkController::processTcpData()
                     .arg(QString::fromStdString(detResult.strSenderId()))
                     .arg(detResult.u64ChainId())
                     .arg(strPayloadSummary)
-                    .arg(QString::fromStdString(detResult.strMessage())));
+                    .arg(tesla::gui::strAuthenticationReasonDisplay(
+                        detResult.strMessage()
+                    )));
             }
 
             emit logMessage(
@@ -375,7 +385,9 @@ void UavMonitorNetworkController::processTcpData()
                     .arg(detResult.u32FailedPacketCount())
                     .arg(detResult.u32MissingPacketCount())
                     .arg(strPayloadSummary)
-                    .arg(QString::fromStdString(detResult.strMessage()))
+                    .arg(tesla::gui::strAuthenticationReasonDisplay(
+                        detResult.strMessage()
+                    ))
             );
         }
         else if (msgMessage.typeMessage()
@@ -401,7 +413,9 @@ void UavMonitorNetworkController::processTcpData()
                 .arg(detFailure.u32IntervalIndex())
                 .arg(detFailure.u32PacketIndex())
                 .arg(QString::fromStdString(detFailure.strActualSourceIp()))
-                .arg(QString::fromStdString(detFailure.strReason())));
+                .arg(tesla::gui::strAuthenticationReasonDisplay(
+                    detFailure.strReason()
+                )));
         }
         else if (msgMessage.typeMessage()
             == NodeControlMessageType::ImprovedGroupObservationEvent)

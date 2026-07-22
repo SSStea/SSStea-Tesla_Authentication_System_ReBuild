@@ -1,5 +1,7 @@
 #include "ManagerNetworkController.h"
 
+#include "gui/shared/AuthenticationDisplayText.h"
+
 #include "algorithm/FileUploadSession.h"
 #include "protocol/AttackControl.h"
 #include "protocol/NodeControlJsonCodec.h"
@@ -946,8 +948,12 @@ void ManagerNetworkController::processNodeControlFrame(
             std::get<ErrorResponseControlDetails>(msgMessage.varDetails());
         emit logMessage(QStringLiteral("节点返回错误 %1：%2")
             .arg(
-                QString::fromStdString(detError.strErrorCode()),
-                QString::fromStdString(detError.strMessage())
+                tesla::gui::strAuthenticationErrorCodeDisplay(
+                    detError.strErrorCode()
+                ),
+                tesla::gui::strAuthenticationReasonDisplay(
+                    detError.strMessage()
+                )
             ));
     }
 }

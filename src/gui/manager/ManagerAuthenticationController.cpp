@@ -1,5 +1,7 @@
 #include "ManagerAuthenticationController.h"
 
+#include "gui/shared/AuthenticationDisplayText.h"
+
 #include "algorithm/AuthenticationRoundParameters.h"
 #include "protocol/NodeControlJsonCodec.h"
 #include "workload/FileWorkload.h"
@@ -1140,7 +1142,9 @@ void ManagerAuthenticationController::processNodeControlJson(
             emit configurationStateChanged(
                 false,
                 QStringLiteral("节点拒绝配置：%1")
-                    .arg(QString::fromStdString(detAck.strMessage()))
+                    .arg(tesla::gui::strAuthenticationReasonDisplay(
+                        detAck.strMessage()
+                    ))
             );
         }
         else if (m_setPendingConfigurationRequests.isEmpty()
@@ -1165,7 +1169,9 @@ void ManagerAuthenticationController::processNodeControlJson(
         if (!detAck.bAccepted())
         {
             emit resultMessage(QStringLiteral("节点拒绝轮次命令：%1")
-                .arg(QString::fromStdString(detAck.strMessage())));
+                .arg(tesla::gui::strAuthenticationReasonDisplay(
+                    detAck.strMessage()
+                )));
         }
         return;
     }
@@ -1191,7 +1197,9 @@ void ManagerAuthenticationController::processNodeControlJson(
             emit faultPlanStateChanged(
                 false,
                 QStringLiteral("目标Sender拒绝故障注入计划：%1")
-                    .arg(QString::fromStdString(detAck.strMessage()))
+                    .arg(tesla::gui::strAuthenticationReasonDisplay(
+                        detAck.strMessage()
+                    ))
             );
         }
         else if (m_setPendingFaultRequests.isEmpty())
@@ -1329,7 +1337,9 @@ void ManagerAuthenticationController::processNodeControlJson(
             .arg(detResult.u32FailedPacketCount())
             .arg(detResult.u32MissingPacketCount())
             .arg(strPayloadStatus)
-            .arg(QString::fromStdString(detResult.strMessage())));
+            .arg(tesla::gui::strAuthenticationReasonDisplay(
+                detResult.strMessage()
+            )));
 
         if (m_setReceivedResultKeys.size()
             >= static_cast<qsizetype>(m_nExpectedResultCount))

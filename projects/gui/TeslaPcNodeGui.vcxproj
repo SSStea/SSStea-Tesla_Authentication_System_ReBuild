@@ -24,6 +24,7 @@
     <QtMoc Include="$(TeslaSourceRoot)gui\pc_node\PcNodeMainWindow.h" />
     <QtMoc Include="$(TeslaSourceRoot)gui\pc_node\PcNodeNetworkController.h" />
     <ClInclude Include="$(TeslaSourceRoot)gui\pc_node\PcAuthenticationViews.h" />
+    <ClInclude Include="$(TeslaSourceRoot)gui\shared\AuthenticationDisplayText.h" />
     <ClInclude Include="$(TeslaSourceRoot)gui\shared\AuthenticationMonitorWidget.h" />
     <ClCompile Include="$(TeslaSourceRoot)gui\pc_node\*.cpp" />
     <ClCompile Include="$(TeslaSourceRoot)gui\shared\AuthenticationMonitorWidget.cpp" />
@@ -32,4 +33,3 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')"><Import Project="$(QtMsBuild)\qt.targets" /></ImportGroup><ImportGroup Label="ExtensionTargets" />
 </Project>
-

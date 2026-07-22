@@ -1,5 +1,7 @@
 #include "PcNodeNetworkController.h"
 
+#include "gui/shared/AuthenticationDisplayText.h"
+
 #include "algorithm/FileUploadSession.h"
 #include "protocol/NodeControlJsonCodec.h"
 
@@ -1060,7 +1062,9 @@ void PcNodeNetworkController::processAuthenticationRuntimeEvent(
                 .arg(QString::fromStdString(detResult.strSenderId()))
                 .arg(detResult.u64ChainId())
                 .arg(strPayloadStatus)
-                .arg(QString::fromStdString(detResult.strMessage())));
+                .arg(tesla::gui::strAuthenticationReasonDisplay(
+                    detResult.strMessage()
+                )));
         }
         else
         {
@@ -1088,7 +1092,9 @@ void PcNodeNetworkController::processAuthenticationRuntimeEvent(
                 .arg(QString::fromStdString(detResult.strSenderId()))
                 .arg(detResult.u64ChainId())
                 .arg(strPayloadStatus, strRecoveredDirectory)
-                .arg(QString::fromStdString(detResult.strMessage())));
+                .arg(tesla::gui::strAuthenticationReasonDisplay(
+                    detResult.strMessage()
+                )));
         }
 
         emit logMessage(QStringLiteral(
@@ -1101,7 +1107,9 @@ void PcNodeNetworkController::processAuthenticationRuntimeEvent(
             .arg(detResult.u32FailedPacketCount())
             .arg(detResult.u32MissingPacketCount())
             .arg(strPayloadStatus)
-            .arg(QString::fromStdString(detResult.strMessage())));
+            .arg(tesla::gui::strAuthenticationReasonDisplay(
+                detResult.strMessage()
+            )));
         // 最终结果到达前逐轮归档已写入运行时指标存储，通知界面刷新导出快照。
         emit authenticationObservationsChanged();
     }

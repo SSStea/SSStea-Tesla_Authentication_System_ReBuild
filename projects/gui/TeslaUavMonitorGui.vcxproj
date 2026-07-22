@@ -24,6 +24,7 @@
     <QtMoc Include="$(TeslaSourceRoot)gui\uav_monitor\UavMonitorMainWindow.h" />
     <QtMoc Include="$(TeslaSourceRoot)gui\uav_monitor\UavMonitorNetworkController.h" />
     <ClInclude Include="$(TeslaSourceRoot)gui\uav_monitor\AuthenticationMetricsView.h" />
+    <ClInclude Include="$(TeslaSourceRoot)gui\shared\AuthenticationDisplayText.h" />
     <ClInclude Include="$(TeslaSourceRoot)gui\shared\AuthenticationMonitorWidget.h" />
     <ClCompile Include="$(TeslaSourceRoot)gui\uav_monitor\*.cpp" />
     <ClCompile Include="$(TeslaSourceRoot)gui\shared\AuthenticationMonitorWidget.cpp" />
@@ -32,4 +33,3 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')"><Import Project="$(QtMsBuild)\qt.targets" /></ImportGroup><ImportGroup Label="ExtensionTargets" />
 </Project>
-

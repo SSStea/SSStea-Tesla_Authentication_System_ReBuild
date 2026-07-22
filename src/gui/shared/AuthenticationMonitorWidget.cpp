@@ -1,5 +1,7 @@
 #include "AuthenticationMonitorWidget.h"
 
+#include "AuthenticationDisplayText.h"
+
 #include "protocol/AuthenticationControl.h"
 
 #include <QAbstractTableModel>
@@ -106,20 +108,20 @@ QString strFailureType(AuthenticationFailureType typeFailure)
     {
     case AuthenticationFailureType::MacFailed:
         return QStringLiteral("MAC_FAILED");
-    case AuthenticationFailureType::TamperedVariant:
-        return QStringLiteral("TAMPERED_VARIANT");
+    case AuthenticationFailureType::MessageConflict:
+        return QStringLiteral("MESSAGE_CONFLICT");
     case AuthenticationFailureType::FastGroupFailed:
         return QStringLiteral("FAST_GROUP_FAILED");
     case AuthenticationFailureType::GroupTauFailed:
         return QStringLiteral("GROUP_TAU_FAILED");
     case AuthenticationFailureType::DetectionThresholdExceeded:
         return QStringLiteral("DETECTION_THRESHOLD_EXCEEDED");
-    case AuthenticationFailureType::ReplayDuplicate:
-        return QStringLiteral("REPLAY_DUPLICATE");
-    case AuthenticationFailureType::ReplayLate:
-        return QStringLiteral("REPLAY_LATE");
-    case AuthenticationFailureType::ReplayExpiredChain:
-        return QStringLiteral("REPLAY_EXPIRED_CHAIN");
+    case AuthenticationFailureType::DuplicateDatagram:
+        return QStringLiteral("DUPLICATE_DATAGRAM");
+    case AuthenticationFailureType::ArrivalWindowExpired:
+        return QStringLiteral("ARRIVAL_WINDOW_EXPIRED");
+    case AuthenticationFailureType::ExpiredChainDatagram:
+        return QStringLiteral("EXPIRED_CHAIN_DATAGRAM");
     case AuthenticationFailureType::MissingPacket:
         return QStringLiteral("MISSING_PACKET");
     case AuthenticationFailureType::IncompleteGroupTags:
@@ -165,8 +167,8 @@ QString strSource(PacketSourceType typeSource)
     {
     case PacketSourceType::NormalSender:
         return QStringLiteral("正常Sender");
-    case PacketSourceType::AttackInjection:
-        return QStringLiteral("攻击注入");
+    case PacketSourceType::AttackTest:
+        return QStringLiteral("攻击测试");
     case PacketSourceType::UnknownSource:
         return QStringLiteral("未知来源");
     }
@@ -336,7 +338,9 @@ public:
                 ) ? QStringLiteral("丢包")
                   : QStringLiteral("MAC/分组校验失败");
             }
-            return strPacketStatus(detPacket.statusAuthentication());
+            return strPacketAuthenticationStatusDisplay(
+                detPacket.statusAuthentication()
+            );
         }
         default:
             return {};
@@ -556,10 +560,16 @@ QString strPacketDetails(const PacketObservationControlDetails& detPacket)
         QStringLiteral("披露延迟: %1").arg(detPacket.u32DisclosureDelay()),
         QStringLiteral("认证模式: %1").arg(strMode(detPacket.modeAuthentication())),
         QStringLiteral("密码算法: %1").arg(strAlgorithm(detPacket.algCryptoAlgorithm())),
-        QStringLiteral("状态: %1").arg(strPacketStatus(detPacket.statusAuthentication())),
+        QStringLiteral("状态: %1").arg(
+            strPacketAuthenticationStatusDisplay(
+                detPacket.statusAuthentication()
+            )
+        ),
         QStringLiteral("候选Hash: %1").arg(QString::fromStdString(detPacket.strCandidateHash())),
         QStringLiteral("重复次数: %1").arg(detPacket.u32DuplicateCount()),
-        QStringLiteral("原因: %1").arg(QString::fromStdString(detPacket.strReason()))
+        QStringLiteral("原因: %1").arg(
+            strAuthenticationReasonDisplay(detPacket.strReason())
+        )
     };
 
     if (const auto* pDisclosure = std::get_if<DisclosurePacketObservationDetails>(
@@ -632,7 +642,9 @@ QString strPacketDetails(const PacketObservationControlDetails& detPacket)
 QString strFailureDetails(const PacketFailureControlDetails& detFailure)
 {
     QStringList lstLines{
-        QStringLiteral("异常类型: %1").arg(strFailureType(detFailure.typeFailure())),
+        QStringLiteral("异常类型: %1").arg(
+            strAuthenticationFailureTypeDisplay(detFailure.typeFailure())
+        ),
         QStringLiteral("Sender: %1").arg(QString::fromStdString(detFailure.strSenderId())),
         QStringLiteral("Chain ID: %1").arg(detFailure.u64ChainId()),
         QStringLiteral("预期报文编号: %1").arg(detFailure.u32PacketIndex()),
@@ -642,7 +654,9 @@ QString strFailureDetails(const PacketFailureControlDetails& detFailure)
                 ? QStringLiteral("—")
                 : QString::fromStdString(detFailure.strActualSourceIp())
         ),
-        QStringLiteral("失败原因: %1").arg(QString::fromStdString(detFailure.strReason()))
+        QStringLiteral("失败原因: %1").arg(
+            strAuthenticationReasonDisplay(detFailure.strReason())
+        )
     };
     if (detFailure.u64PacketEventId() == 0)
     {
