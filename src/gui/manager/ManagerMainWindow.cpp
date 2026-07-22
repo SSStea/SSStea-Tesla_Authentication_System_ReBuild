@@ -1569,6 +1569,26 @@ void ManagerMainWindow::applyStyle()
             background: white;
             border: 1px solid #dbe3ec;
         }
+        QTabBar::tab {
+            color: #475569;
+            background: #eef3f9;
+            border: 1px solid #d7e0ec;
+            border-bottom: 0;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+            padding: 6px 14px;
+            margin-right: 2px;
+        }
+        QTabBar::tab:!selected:hover {
+            color: #1d4ed8;
+            background: #dbeafe;
+        }
+        QTabBar::tab:selected {
+            color: white;
+            background: #2563eb;
+            border-color: #2563eb;
+            font-weight: 600;
+        }
         QGroupBox {
             background: white;
             border: 1px solid #dbe3ec;
