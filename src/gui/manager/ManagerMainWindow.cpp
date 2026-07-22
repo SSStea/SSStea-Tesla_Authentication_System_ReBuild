@@ -939,7 +939,8 @@ void ManagerMainWindow::validateAuthenticationInputs()
             (u64PacketCount
                 + static_cast<std::uint64_t>(nPacketsPerInterval) - 1U)
             / static_cast<std::uint64_t>(nPacketsPerInterval);
-        tesla::metrics::CommunicationCostMetricSummary sumCommunication =
+        const tesla::metrics::CommunicationCostMetricSummary
+            sumNativeCommunication =
             tesla::metrics::CommunicationCostCalculator::sumNative(
                 1,
                 "CONFIGURATION",
@@ -948,7 +949,19 @@ void ManagerMainWindow::validateAuthenticationInputs()
                 u64PacketCount,
                 u64DataIntervalCount
             );
-        if (bImproved)
+        const QString strNativeFormula = QStringLiteral(
+            "TESLA：C = 32B × (2N + I) = 32B × (2 × %1 + %2) = %3B"
+        )
+            .arg(u64PacketCount)
+            .arg(u64DataIntervalCount)
+            .arg(sumNativeCommunication.u64TotalBytes());
+
+        std::uint64_t u64SelectedTotalBytes =
+            sumNativeCommunication.u64TotalBytes();
+        QString       strImprovedFormula = QStringLiteral(
+            "S-TESLA：C = 32B × [N + I + G × (τ + 1)]"
+        );
+        try
         {
             const tesla::core::ImprovedTeslaParameters prmImproved(
                 static_cast<std::uint32_t>(nGroupSize),
@@ -957,7 +970,8 @@ void ManagerMainWindow::validateAuthenticationInputs()
             const std::uint64_t u64GroupCount =
                 (u64PacketCount + static_cast<std::uint64_t>(nGroupSize) - 1U)
                 / static_cast<std::uint64_t>(nGroupSize);
-            sumCommunication =
+            const tesla::metrics::CommunicationCostMetricSummary
+                sumImprovedCommunication =
                 tesla::metrics::CommunicationCostCalculator::sumImproved(
                     1,
                     "CONFIGURATION",
@@ -968,16 +982,43 @@ void ManagerMainWindow::validateAuthenticationInputs()
                     u64GroupCount * prmImproved.nTauCount(),
                     u64GroupCount
                 );
+            strImprovedFormula = QStringLiteral(
+                "S-TESLA：C = 32B × [N + I + G × (τ + 1)] "
+                "= 32B × [%1 + %2 + %3 × (%4 + 1)] = %5B"
+            )
+                .arg(u64PacketCount)
+                .arg(u64DataIntervalCount)
+                .arg(u64GroupCount)
+                .arg(static_cast<qulonglong>(prmImproved.nTauCount()))
+                .arg(sumImprovedCommunication.u64TotalBytes());
+
+            if (bImproved)
+            {
+                u64SelectedTotalBytes =
+                    sumImprovedCommunication.u64TotalBytes();
+            }
+        }
+        catch (const std::exception&)
+        {
+            strImprovedFormula += QStringLiteral(
+                "（当前分组大小与检测阈值无效，无法代入计算）"
+            );
         }
 
         m_pCommunicationValue->setText(
-            QStringLiteral("认证模式：%1\n通信开销总字节数：%2B")
+            QStringLiteral(
+                "认证模式：%1\n通信开销总字节数：%2B\n%3\n%4\n"
+                "N=报文数，I=数据间隔数，G=认证分组数，τ=每组分组标签数量；"
+                "仅统计认证算法字段，不含UDP/TCP头和序列化字段。"
+            )
                 .arg(
                     bImproved
                         ? QStringLiteral("S-TESLA")
                         : QStringLiteral("TESLA")
                 )
-                .arg(sumCommunication.u64TotalBytes())
+                .arg(u64SelectedTotalBytes)
+                .arg(strNativeFormula)
+                .arg(strImprovedFormula)
         );
     }
 
