@@ -1,23 +1,41 @@
 #include "AttackTestNetworkController.h"
 
+#include "protocol/UdpAuthenticationPacketCodec.h"
+
 #include <QAbstractSocket>
+#include <QCoreApplication>
 #include <QDateTime>
-#include <QHostAddress>
 #include <QNetworkAddressEntry>
 #include <QNetworkInterface>
 #include <QSet>
-#include <QTcpServer>
-#include <QTcpSocket>
 #include <QTimer>
 #include <QUdpSocket>
 
-#include <utility>
-#include <exception>
+#include <algorithm>
 #include <variant>
 
 namespace
 {
 using namespace tesla::protocol;
+
+constexpr qsizetype MESSAGE_OFFSET = 16;
+constexpr qsizetype MESSAGE_SIZE = 32;
+constexpr qsizetype MAXIMUM_RECORD_COUNT = 2000;
+constexpr std::uint64_t ROUND_CHAIN_GROUPING_WINDOW_MILLISECONDS = 1000;
+
+std::uint64_t u64NowMilliseconds()
+{
+    return static_cast<std::uint64_t>(QDateTime::currentMSecsSinceEpoch());
+}
+
+ByteBuffer vecBytes(const QByteArray& arrBytes)
+{
+    return ByteBuffer(
+        reinterpret_cast<const std::uint8_t*>(arrBytes.constData()),
+        reinterpret_cast<const std::uint8_t*>(arrBytes.constData())
+            + arrBytes.size()
+    );
+}
 
 bool bIsPrivateIpv4(const QHostAddress& adrAddress)
 {
@@ -28,135 +46,100 @@ bool bIsPrivateIpv4(const QHostAddress& adrAddress)
         || (u8First == 172 && u8Second >= 16 && u8Second <= 31)
         || (u8First == 192 && u8Second == 168);
 }
+}
 
-int nInterfaceScore(
-    const QNetworkInterface& infNetwork,
-    const QHostAddress& adrAddress
+AttackDatagramRecord::AttackDatagramRecord(
+    std::uint64_t u64RecordId,
+    std::uint64_t u64CaptureTimestampMilliseconds,
+    QString strSenderAddress,
+    std::uint64_t u64ChainId,
+    std::uint32_t u32OriginalIntervalIndex,
+    std::uint32_t u32OriginalPacketIndex,
+    QByteArray arrDatagram
 )
+    : m_u64RecordId(u64RecordId),
+      m_u64CaptureTimestampMilliseconds(u64CaptureTimestampMilliseconds),
+      m_strSenderAddress(std::move(strSenderAddress)),
+      m_u64ChainId(u64ChainId),
+      m_u32OriginalIntervalIndex(u32OriginalIntervalIndex),
+      m_u32OriginalPacketIndex(u32OriginalPacketIndex),
+      m_arrDatagram(std::move(arrDatagram))
 {
-    int nScore = bIsPrivateIpv4(adrAddress) ? 100 : 0;
-    if (infNetwork.type() == QNetworkInterface::Wifi)
-    {
-        nScore += 60;
-    }
-    else if (infNetwork.type() == QNetworkInterface::Ethernet)
-    {
-        nScore += 50;
-    }
-    else if (infNetwork.type() == QNetworkInterface::Virtual)
-    {
-        nScore -= 80;
-    }
-
-    const QString strInterfaceText = (
-        infNetwork.name() + QStringLiteral(" ") + infNetwork.humanReadableName()
-    ).toLower();
-    if (strInterfaceText.contains(QStringLiteral("vmware"))
-        || strInterfaceText.contains(QStringLiteral("virtual"))
-        || strInterfaceText.contains(QStringLiteral("hyper-v"))
-        || strInterfaceText.contains(QStringLiteral("wsl"))
-        || strInterfaceText.contains(QStringLiteral("vpn"))
-        || strInterfaceText.contains(QStringLiteral("tailscale"))
-        || strInterfaceText.contains(QStringLiteral("zerotier")))
-    {
-        nScore -= 100;
-    }
-    return nScore;
 }
 
-/** @brief 使用与节点命名相同的规则选择最可能承担局域网组播的本机IPv4。 */
-QString strPreferredIpv4Address()
+std::uint64_t AttackDatagramRecord::u64RecordId() const noexcept
 {
-    int     nBestScore = -10000;
-    QString strBestAddress;
-    const QList<QNetworkInterface> listInterfaces = QNetworkInterface::allInterfaces();
-    for (const QNetworkInterface& infNetwork : listInterfaces)
-    {
-        const QNetworkInterface::InterfaceFlags flgInterface = infNetwork.flags();
-        if (!flgInterface.testFlag(QNetworkInterface::IsUp)
-            || !flgInterface.testFlag(QNetworkInterface::IsRunning)
-            || flgInterface.testFlag(QNetworkInterface::IsLoopBack))
-        {
-            continue;
-        }
-
-        for (const QNetworkAddressEntry& entAddress : infNetwork.addressEntries())
-        {
-            if (entAddress.ip().protocol() != QAbstractSocket::IPv4Protocol)
-            {
-                continue;
-            }
-
-            const int nScore = nInterfaceScore(infNetwork, entAddress.ip());
-            if (nScore > nBestScore)
-            {
-                nBestScore = nScore;
-                strBestAddress = entAddress.ip().toString();
-            }
-        }
-    }
-    return strBestAddress;
+    return m_u64RecordId;
 }
 
-ByteBuffer vecFromByteArray(const QByteArray& arrBytes)
+std::uint64_t
+AttackDatagramRecord::u64CaptureTimestampMilliseconds() const noexcept
 {
-    return ByteBuffer(
-        reinterpret_cast<const std::uint8_t*>(arrBytes.constData()),
-        reinterpret_cast<const std::uint8_t*>(arrBytes.constData())
-            + arrBytes.size()
+    return m_u64CaptureTimestampMilliseconds;
+}
+
+const QString& AttackDatagramRecord::strSenderAddress() const noexcept
+{
+    return m_strSenderAddress;
+}
+
+std::uint64_t AttackDatagramRecord::u64ChainId() const noexcept
+{
+    return m_u64ChainId;
+}
+
+std::uint32_t
+AttackDatagramRecord::u32OriginalIntervalIndex() const noexcept
+{
+    return m_u32OriginalIntervalIndex;
+}
+
+std::uint32_t
+AttackDatagramRecord::u32OriginalPacketIndex() const noexcept
+{
+    return m_u32OriginalPacketIndex;
+}
+
+const QByteArray& AttackDatagramRecord::arrDatagram() const noexcept
+{
+    return m_arrDatagram;
+}
+
+QString AttackDatagramRecord::strMessageHex() const
+{
+    return QString::fromLatin1(
+        m_arrDatagram.mid(MESSAGE_OFFSET, MESSAGE_SIZE).toHex().toUpper()
     );
 }
-
-QByteArray arrToByteArray(const ByteBuffer& vecBytes)
-{
-    return QByteArray(
-        reinterpret_cast<const char*>(vecBytes.data()),
-        static_cast<qsizetype>(vecBytes.size())
-    );
-}
-
-std::uint64_t u64NowMilliseconds()
-{
-    return static_cast<std::uint64_t>(QDateTime::currentMSecsSinceEpoch());
-}
-}
-
-struct AttackTestNetworkController::ClientState final
-{
-    QTcpSocket*           pSocket = nullptr;
-    TcpFrameStreamDecoder decStream;
-    bool                  bHelloReceived = false;
-};
 
 AttackTestNetworkController::AttackTestNetworkController(
     std::uint16_t u16DiscoveryPort,
-    std::uint16_t u16ControlPort,
     QString strMulticastAddress,
     std::uint16_t u16MulticastPort,
-    std::chrono::milliseconds durHeartbeatInterval,
     QObject* pParent
 )
     : QObject(pParent),
       m_u16DiscoveryPort(u16DiscoveryPort),
-      m_u16ControlPort(u16ControlPort),
       m_strMulticastAddress(std::move(strMulticastAddress)),
       m_u16MulticastPort(u16MulticastPort),
-      m_durHeartbeatInterval(durHeartbeatInterval),
-      m_strNodeName(strCreateNodeName()),
-      m_ctlExecution(m_strMulticastAddress, m_u16MulticastPort, this),
       m_pDiscoverySocket(new QUdpSocket(this)),
+      m_pPresenceSocket(new QUdpSocket(this)),
       m_pMulticastSocket(new QUdpSocket(this)),
-      m_pControlServer(new QTcpServer(this)),
+      m_pBroadcastSocket(new QUdpSocket(this)),
       m_pHeartbeatTimer(new QTimer(this)),
+      m_pHighRateTimer(new QTimer(this)),
+      m_u64NextRecordId(1),
+      m_u64RoundFirstDatagramTimestampMilliseconds(0),
       m_bRunning(false),
       m_bMulticastListening(false),
-      m_bAttackRunning(false),
-      m_u64NextAttackId(1),
-      m_u64LastStatusBroadcastMilliseconds(0)
+      m_bHighRateTrafficRunning(false),
+      m_u32HighRatePacketsPerSecond(0),
+      m_u32HighRateDurationMilliseconds(0),
+      m_u32HighRateDatagramBytes(0),
+      m_u64HighRateSentCount(0)
 {
-    m_pHeartbeatTimer->setInterval(
-        static_cast<int>(m_durHeartbeatInterval.count())
-    );
+    m_pHeartbeatTimer->setInterval(1000);
+    m_pHighRateTimer->setInterval(1);
 
     connect(
         m_pDiscoverySocket,
@@ -168,13 +151,7 @@ AttackTestNetworkController::AttackTestNetworkController(
         m_pMulticastSocket,
         &QUdpSocket::readyRead,
         this,
-        &AttackTestNetworkController::drainMulticastDatagrams
-    );
-    connect(
-        m_pControlServer,
-        &QTcpServer::newConnection,
-        this,
-        &AttackTestNetworkController::acceptPendingClients
+        &AttackTestNetworkController::processMulticastDatagrams
     );
     connect(
         m_pHeartbeatTimer,
@@ -183,33 +160,10 @@ AttackTestNetworkController::AttackTestNetworkController(
         &AttackTestNetworkController::sendHeartbeat
     );
     connect(
-        &m_ctlExecution,
-        &AttackExecutionController::stateChanged,
+        m_pHighRateTimer,
+        &QTimer::timeout,
         this,
-        [this]()
-        {
-            const AttackExecutionState stateExecution =
-                m_ctlExecution.stateExecution();
-            m_bAttackRunning = stateExecution == AttackExecutionState::Scheduled
-                || stateExecution == AttackExecutionState::Running;
-            const bool bTerminal = stateExecution == AttackExecutionState::Completed
-                || stateExecution == AttackExecutionState::Stopped
-                || stateExecution == AttackExecutionState::Failed;
-            broadcastExecutionStatus(bTerminal);
-            emit stateChanged();
-        }
-    );
-    connect(
-        &m_ctlExecution,
-        &AttackExecutionController::recordAdded,
-        this,
-        &AttackTestNetworkController::stateChanged
-    );
-    connect(
-        &m_ctlExecution,
-        &AttackExecutionController::logMessage,
-        this,
-        &AttackTestNetworkController::logMessage
+        &AttackTestNetworkController::sendHighRateBatch
     );
 }
 
@@ -225,68 +179,65 @@ bool AttackTestNetworkController::bStart()
         return true;
     }
 
+    m_strLocalIpv4Address = strPreferredIpv4Address();
+    m_strNodeName = strCreateNodeName();
+    const QHostAddress adrLocal(m_strLocalIpv4Address);
     const bool bDiscoveryBound = m_pDiscoverySocket->bind(
         QHostAddress::AnyIPv4,
         m_u16DiscoveryPort,
         QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint
     );
-    if (!bDiscoveryBound)
-    {
-        emit logMessage(QStringLiteral("攻击端发现端口绑定失败：")
-            + m_pDiscoverySocket->errorString());
-        return false;
-    }
-
-    if (!m_pControlServer->listen(QHostAddress::AnyIPv4, m_u16ControlPort))
-    {
-        emit logMessage(QStringLiteral("攻击端控制端口监听失败：")
-            + m_pControlServer->errorString());
-        m_pDiscoverySocket->close();
-        return false;
-    }
-
+    const bool bPresenceBound = m_pPresenceSocket->bind(adrLocal, 0);
+    const bool bBroadcastBound = m_pBroadcastSocket->bind(adrLocal, 0);
     const bool bMulticastBound = m_pMulticastSocket->bind(
         QHostAddress::AnyIPv4,
         m_u16MulticastPort,
         QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint
     );
-    m_bMulticastListening = bMulticastBound && bJoinMulticastGroups();
+    if (!bDiscoveryBound || !bPresenceBound || !bBroadcastBound
+        || !bMulticastBound)
+    {
+        emit logMessage(QStringLiteral("攻击测试端网络端口绑定失败"));
+        stop();
+        return false;
+    }
+
+    m_pBroadcastSocket->setSocketOption(
+        QAbstractSocket::MulticastTtlOption,
+        1
+    );
+    m_pBroadcastSocket->setSocketOption(
+        QAbstractSocket::MulticastLoopbackOption,
+        1
+    );
+    m_bMulticastListening = bJoinMulticastGroups();
     if (!m_bMulticastListening)
     {
-        emit logMessage(QStringLiteral(
-            "攻击端控制服务已启动，但TESLA组播监听不可用"
-        ));
+        stop();
+        return false;
     }
 
     m_bRunning = true;
     m_pHeartbeatTimer->start();
     sendHeartbeat();
-    emit logMessage(QStringLiteral("%1 已启动，独立控制端口 %2")
-        .arg(m_strNodeName)
-        .arg(m_u16ControlPort));
+    emit logMessage(QStringLiteral("攻击测试端已监听 %1:%2，本地地址 %3")
+        .arg(m_strMulticastAddress)
+        .arg(m_u16MulticastPort)
+        .arg(m_strLocalIpv4Address));
     emit stateChanged();
     return true;
 }
 
 void AttackTestNetworkController::stop() noexcept
 {
-    m_bRunning = false;
-    m_bAttackRunning = false;
-    m_ctlExecution.stop(true);
-    m_bMulticastListening = false;
+    stopHighRateTraffic();
     m_pHeartbeatTimer->stop();
     m_pDiscoverySocket->close();
+    m_pPresenceSocket->close();
     m_pMulticastSocket->close();
-    m_pControlServer->close();
-
-    const QList<QTcpSocket*> listSockets = m_mapClients.keys();
-    for (QTcpSocket* pSocket : listSockets)
-    {
-        pSocket->abort();
-        pSocket->deleteLater();
-    }
-    m_mapClients.clear();
-    emit stateChanged();
+    m_pBroadcastSocket->close();
+    m_bRunning = false;
+    m_bMulticastListening = false;
 }
 
 bool AttackTestNetworkController::bIsRunning() const noexcept
@@ -299,508 +250,129 @@ bool AttackTestNetworkController::bMulticastListening() const noexcept
     return m_bMulticastListening;
 }
 
-bool AttackTestNetworkController::bAttackRunning() const noexcept
+QString AttackTestNetworkController::strLocalIpv4Address() const
 {
-    return m_bAttackRunning;
+    return m_strLocalIpv4Address;
 }
 
-bool AttackTestNetworkController::bSubmitPlan(
-    AttackPlanDetails varPlanDetails,
-    bool bConfirmThresholdExceeded,
+QVector<AttackDatagramRecord>
+AttackTestNetworkController::vecRecordSnapshot() const
+{
+    return m_vecRecords;
+}
+
+bool AttackTestNetworkController::bBroadcastMessageConflict(
+    std::uint64_t u64RecordId,
+    const QString& strMessageHex,
     QString& strError
 )
 {
-    const auto optContext = m_ctlExecution.optContextSnapshot();
-    if (!optContext.has_value())
+    const AttackDatagramRecord* pRecord = pFindRecord(u64RecordId);
+    const QByteArray arrMessage = QByteArray::fromHex(strMessageHex.toLatin1());
+    if (pRecord == nullptr)
     {
-        strError = QStringLiteral("尚未收到本轮公开认证上下文");
+        strError = QStringLiteral("所选报文已经不在监听缓存中");
+        return false;
+    }
+    if (strMessageHex.size() != MESSAGE_SIZE * 2
+        || arrMessage.size() != MESSAGE_SIZE)
+    {
+        strError = QStringLiteral("Message必须是64个十六进制字符");
         return false;
     }
 
-    std::shared_ptr<ClientState> ptrManager;
-    for (auto itrClient = m_mapClients.cbegin();
-         itrClient != m_mapClients.cend();
-         ++itrClient)
-    {
-        if (itrClient.value() && itrClient.value()->bHelloReceived)
-        {
-            if (ptrManager)
-            {
-                strError = QStringLiteral("存在多个管理连接，无法确定计划接收方");
-                return false;
-            }
-            ptrManager = itrClient.value();
-        }
-    }
-    if (!ptrManager)
-    {
-        strError = QStringLiteral("尚无已完成握手的管理连接");
-        return false;
-    }
-
-    const AttackPlanControlDetails detPlan(
-        m_u64NextAttackId++,
-        optContext->strRoundId(),
-        optContext->strTargetSenderId(),
-        optContext->u64ChainId(),
-        std::move(varPlanDetails)
-    );
-    if (!m_ctlExecution.bPreparePlan(
-            detPlan,
-            bConfirmThresholdExceeded,
-            strError
-        ))
+    QByteArray arrDatagram = pRecord->arrDatagram();
+    arrDatagram.replace(MESSAGE_OFFSET, MESSAGE_SIZE, arrMessage);
+    if (!bBroadcastDatagram(arrDatagram, strError))
     {
         return false;
     }
 
-    if (!bSendControl(ptrManager, AttackControlMessage(detPlan)))
+    emit logMessage(QStringLiteral(
+        "已广播Message冲突副本：Sender=%1，原间隔=%2，原报文编号=%3"
+    ).arg(pRecord->strSenderAddress())
+        .arg(pRecord->u32OriginalIntervalIndex())
+        .arg(pRecord->u32OriginalPacketIndex()));
+    return true;
+}
+
+bool AttackTestNetworkController::bBroadcastDelayedDuplicate(
+    std::uint64_t u64RecordId,
+    QString& strError
+)
+{
+    const AttackDatagramRecord* pRecord = pFindRecord(u64RecordId);
+    if (pRecord == nullptr)
     {
-        m_ctlExecution.discardPlan();
-        strError = QStringLiteral("认证鲁棒性计划发送失败");
+        strError = QStringLiteral("所选报文已经不在监听缓存中");
+        return false;
+    }
+    if (!bBroadcastDatagram(pRecord->arrDatagram(), strError))
+    {
         return false;
     }
 
-    strError.clear();
-    emit logMessage(QStringLiteral("认证鲁棒性计划已提交，等待管理端确认"));
+    emit logMessage(QStringLiteral(
+        "已广播延迟重复报文：Sender=%1，原间隔=%2，原报文编号=%3"
+    ).arg(pRecord->strSenderAddress())
+        .arg(pRecord->u32OriginalIntervalIndex())
+        .arg(pRecord->u32OriginalPacketIndex()));
+    return true;
+}
+
+bool AttackTestNetworkController::bStartHighRateTraffic(
+    std::uint32_t u32PacketsPerSecond,
+    std::uint32_t u32DurationMilliseconds,
+    std::uint32_t u32DatagramBytes,
+    QString& strError
+)
+{
+    if (!m_bRunning || !m_bMulticastListening)
+    {
+        strError = QStringLiteral("组播监听服务尚未启动");
+        return false;
+    }
+    if (m_bHighRateTrafficRunning)
+    {
+        strError = QStringLiteral("高频无效流量已经在运行");
+        return false;
+    }
+    if (u32PacketsPerSecond == 0 || u32DurationMilliseconds == 0
+        || u32DatagramBytes == 0 || u32DatagramBytes > 1400)
+    {
+        strError = QStringLiteral("高频无效流量参数超出允许范围");
+        return false;
+    }
+
+    m_u32HighRatePacketsPerSecond = u32PacketsPerSecond;
+    m_u32HighRateDurationMilliseconds = u32DurationMilliseconds;
+    m_u32HighRateDatagramBytes = u32DatagramBytes;
+    m_u64HighRateSentCount = 0;
+    m_tmrHighRateElapsed.restart();
+    m_bHighRateTrafficRunning = true;
+    m_pHighRateTimer->start();
+    emit logMessage(QStringLiteral("高频无效流量已开始"));
     emit stateChanged();
     return true;
 }
 
-void AttackTestNetworkController::stopLocalExecution(bool bEmergency) noexcept
+void AttackTestNetworkController::stopHighRateTraffic() noexcept
 {
-    m_ctlExecution.stop(bEmergency);
-    broadcastExecutionStatus(true);
-}
-
-AttackExecutionState AttackTestNetworkController::stateAttackExecution() const noexcept
-{
-    return m_ctlExecution.stateExecution();
-}
-
-std::optional<AttackRoundContextControlDetails>
-AttackTestNetworkController::optRoundContextSnapshot() const
-{
-    return m_ctlExecution.optContextSnapshot();
-}
-
-std::optional<AttackPlanControlDetails>
-AttackTestNetworkController::optPlanSnapshot() const
-{
-    return m_ctlExecution.optPlanSnapshot();
-}
-
-std::optional<AttackExecutionStatusControlDetails>
-AttackTestNetworkController::optExecutionStatusSnapshot() const
-{
-    if (!m_ctlExecution.bHasPlan())
-    {
-        return std::nullopt;
-    }
-
-    try
-    {
-        return m_ctlExecution.detStatusSnapshot();
-    }
-    catch (const std::exception&)
-    {
-        return std::nullopt;
-    }
-}
-
-QVector<AttackExecutionRecord> AttackTestNetworkController::vecAttackRecordSnapshot() const
-{
-    return m_ctlExecution.vecRecordSnapshot();
-}
-
-std::size_t AttackTestNetworkController::nConnectedClientCount() const noexcept
-{
-    return static_cast<std::size_t>(m_mapClients.size());
-}
-
-const QString& AttackTestNetworkController::strNodeName() const noexcept
-{
-    return m_strNodeName;
-}
-
-QString AttackTestNetworkController::strLocalIpv4Address() const
-{
-    return strPreferredIpv4Address();
-}
-
-std::uint16_t AttackTestNetworkController::u16ControlPort() const noexcept
-{
-    return m_u16ControlPort;
-}
-
-void AttackTestNetworkController::acceptPendingClients()
-{
-    constexpr qsizetype MAX_CLIENT_COUNT = 8;
-    while (m_pControlServer->hasPendingConnections())
-    {
-        QTcpSocket* pSocket = m_pControlServer->nextPendingConnection();
-        if (pSocket == nullptr)
-        {
-            continue;
-        }
-
-        if (m_mapClients.size() >= MAX_CLIENT_COUNT)
-        {
-            pSocket->disconnectFromHost();
-            pSocket->deleteLater();
-            continue;
-        }
-
-        std::shared_ptr<ClientState> ptrClient = std::make_shared<ClientState>();
-        ptrClient->pSocket = pSocket;
-        m_mapClients.insert(pSocket, ptrClient);
-
-        connect(
-            pSocket,
-            &QTcpSocket::readyRead,
-            this,
-            [this, ptrClient]()
-            {
-                processClientTcp(ptrClient);
-            }
-        );
-        connect(
-            pSocket,
-            &QTcpSocket::disconnected,
-            this,
-            [this, pSocket]()
-            {
-                m_mapClients.remove(pSocket);
-                pSocket->deleteLater();
-                emit stateChanged();
-            }
-        );
-
-        emit logMessage(QStringLiteral("集中管理客户端已连接：")
-            + pSocket->peerAddress().toString());
-        emit stateChanged();
-    }
-}
-
-void AttackTestNetworkController::processClientTcp(
-    const std::shared_ptr<ClientState>& ptrClient
-)
-{
-    const TcpFrameStreamDecodeBatch batFrames = ptrClient->decStream.batConsume(
-        vecFromByteArray(ptrClient->pSocket->readAll())
-    );
-    if (batFrames.optError().has_value())
-    {
-        bSendControl(
-            ptrClient,
-            AttackControlMessage(AttackErrorControlDetails(
-                "",
-                "MALFORMED_FRAME",
-                batFrames.optError()->strMessage()
-            ))
-        );
-        ptrClient->pSocket->disconnectFromHost();
-        return;
-    }
-
-    for (const TcpFrame& frmFrame : batFrames.vecFrames())
-    {
-        if (!bHandleFrame(ptrClient, frmFrame))
-        {
-            ptrClient->pSocket->disconnectFromHost();
-            return;
-        }
-    }
-}
-
-bool AttackTestNetworkController::bHandleFrame(
-    const std::shared_ptr<ClientState>& ptrClient,
-    const TcpFrame& frmFrame
-)
-{
-    if (!std::holds_alternative<JsonControlFramePayload>(frmFrame.varPayload()))
-    {
-        bSendControl(
-            ptrClient,
-            AttackControlMessage(AttackErrorControlDetails(
-                "",
-                "FILE_FRAME_FORBIDDEN",
-                "Attack control service accepts JSON control frames only"
-            ))
-        );
-        return false;
-    }
-
-    const AttackControlDecodeResult resMessage = AttackControlJsonCodec::resDecode(
-        std::get<JsonControlFramePayload>(frmFrame.varPayload()).strJson()
-    );
-    if (!std::holds_alternative<AttackControlMessage>(resMessage))
-    {
-        bSendControl(
-            ptrClient,
-            AttackControlMessage(AttackErrorControlDetails(
-                "",
-                "INVALID_ATTACK_CONTROL",
-                std::get<ProtocolDecodeError>(resMessage).strMessage()
-            ))
-        );
-        return false;
-    }
-
-    const AttackControlMessage& msgMessage =
-        std::get<AttackControlMessage>(resMessage);
-    if (!ptrClient->bHelloReceived)
-    {
-        if (msgMessage.typeMessage() != AttackControlMessageType::ClientHello)
-        {
-            bSendControl(
-                ptrClient,
-                AttackControlMessage(AttackErrorControlDetails(
-                    "",
-                    "HELLO_REQUIRED",
-                    "The first attack control message must be ATTACK_CLIENT_HELLO"
-                ))
-            );
-            return false;
-        }
-
-        ptrClient->bHelloReceived = true;
-        emit logMessage(QStringLiteral("攻击控制管理握手已通过"));
-        return true;
-    }
-
-    if (msgMessage.typeMessage() == AttackControlMessageType::Ping)
-    {
-        const AttackRequestControlDetails& detRequest =
-            std::get<AttackRequestControlDetails>(msgMessage.varDetails());
-        return bSendControl(
-            ptrClient,
-            AttackControlMessage(AttackRequestControlDetails(
-                AttackControlMessageType::Pong,
-                detRequest.strRequestId()
-            ))
-        );
-    }
-
-    if (msgMessage.typeMessage() == AttackControlMessageType::StatusRequest)
-    {
-        const AttackRequestControlDetails& detRequest =
-            std::get<AttackRequestControlDetails>(msgMessage.varDetails());
-        const bool bSent = bSendControl(
-            ptrClient,
-            AttackControlMessage(AttackStatusControlDetails(
-                detRequest.strRequestId(),
-                m_strNodeName.toStdString(),
-                m_bMulticastListening,
-                m_ctlExecution.stateExecution(),
-                u64NowMilliseconds()
-            ))
-        );
-        emit logMessage(
-            bSent
-                ? QStringLiteral("已返回攻击端状态")
-                : QStringLiteral("攻击端状态返回失败")
-        );
-        return bSent;
-    }
-
-    if (msgMessage.typeMessage() == AttackControlMessageType::RoundContext)
-    {
-        const AttackRoundContextControlDetails& detContext =
-            std::get<AttackRoundContextControlDetails>(msgMessage.varDetails());
-        QString strError;
-        if (!m_ctlExecution.bConfigureContext(detContext, strError))
-        {
-            return bSendError(
-                ptrClient,
-                detContext.strRequestId(),
-                "CONTEXT_REJECTED",
-                strError
-            );
-        }
-
-        return bSendControl(
-            ptrClient,
-            AttackControlMessage(AttackStatusControlDetails(
-                detContext.strRequestId(),
-                m_strNodeName.toStdString(),
-                m_bMulticastListening,
-                m_ctlExecution.stateExecution(),
-                u64NowMilliseconds()
-            ))
-        );
-    }
-
-    if (msgMessage.typeMessage() == AttackControlMessageType::PlanAccepted)
-    {
-        const AttackPlanAcceptedControlDetails& detAccepted =
-            std::get<AttackPlanAcceptedControlDetails>(msgMessage.varDetails());
-        QString strError;
-        if (!detAccepted.bAccepted())
-        {
-            m_ctlExecution.discardPlan();
-            emit logMessage(QStringLiteral("管理端拒绝认证鲁棒性计划：")
-                + QString::fromStdString(detAccepted.strMessage()));
-            return true;
-        }
-        if (!m_ctlExecution.bAcceptPlan(
-                detAccepted.u64AttackId(),
-                detAccepted.strRoundId(),
-                strError
-            ))
-        {
-            return bSendError(
-                ptrClient,
-                "",
-                "PLAN_CONFIRM_REJECTED",
-                strError
-            );
-        }
-
-        return bSendControl(
-            ptrClient,
-            AttackControlMessage(AttackReadyControlDetails(
-                detAccepted.u64AttackId(),
-                detAccepted.strRoundId(),
-                u64NowMilliseconds()
-            ))
-        );
-    }
-
-    if (msgMessage.typeMessage() == AttackControlMessageType::RoundStart)
-    {
-        const AttackRoundCommandControlDetails& detCommand =
-            std::get<AttackRoundCommandControlDetails>(msgMessage.varDetails());
-        QString strError;
-        if (!m_ctlExecution.bScheduleStart(
-                detCommand.u64AttackId(),
-                detCommand.strRoundId(),
-                detCommand.u64ExecutionTimestampMilliseconds(),
-                strError
-            ))
-        {
-            return bSendError(
-                ptrClient,
-                "",
-                "START_REJECTED",
-                strError
-            );
-        }
-        return bSendExecutionStatus(ptrClient);
-    }
-
-    if (msgMessage.typeMessage() == AttackControlMessageType::Stop
-        || msgMessage.typeMessage() == AttackControlMessageType::EmergencyStop)
-    {
-        m_ctlExecution.stop(
-            msgMessage.typeMessage() == AttackControlMessageType::EmergencyStop
-        );
-        return bSendExecutionStatus(ptrClient);
-    }
-
-    return bSendError(
-        ptrClient,
-        "",
-        "UNSUPPORTED_ATTACK_CONTROL",
-        QStringLiteral("当前攻击端不接受该控制消息")
-    );
-}
-
-bool AttackTestNetworkController::bSendControl(
-    const std::shared_ptr<ClientState>& ptrClient,
-    const AttackControlMessage& msgMessage
-)
-{
-    if (ptrClient->pSocket == nullptr
-        || ptrClient->pSocket->state() != QAbstractSocket::ConnectedState)
-    {
-        return false;
-    }
-
-    const ByteBuffer vecFrame = TcpFrameCodec::vecEncode(TcpFrame(
-        JsonControlFramePayload(AttackControlJsonCodec::strEncode(msgMessage))
-    ));
-    return ptrClient->pSocket->write(arrToByteArray(vecFrame))
-        == static_cast<qint64>(vecFrame.size());
-}
-
-bool AttackTestNetworkController::bSendError(
-    const std::shared_ptr<ClientState>& ptrClient,
-    const std::string& strRequestId,
-    const std::string& strErrorCode,
-    const QString& strMessage
-)
-{
-    return bSendControl(
-        ptrClient,
-        AttackControlMessage(AttackErrorControlDetails(
-            strRequestId,
-            strErrorCode,
-            strMessage.toStdString()
-        ))
-    );
-}
-
-bool AttackTestNetworkController::bSendExecutionStatus(
-    const std::shared_ptr<ClientState>& ptrClient
-)
-{
-    if (!m_ctlExecution.bHasPlan())
-    {
-        return bSendControl(
-            ptrClient,
-            AttackControlMessage(AttackStatusControlDetails(
-                "attack-status",
-                m_strNodeName.toStdString(),
-                m_bMulticastListening,
-                m_ctlExecution.stateExecution(),
-                u64NowMilliseconds()
-            ))
-        );
-    }
-
-    try
-    {
-        return bSendControl(
-            ptrClient,
-            AttackControlMessage(m_ctlExecution.detStatusSnapshot())
-        );
-    }
-    catch (const std::exception& exError)
-    {
-        return bSendError(
-            ptrClient,
-            "",
-            "STATUS_SNAPSHOT_FAILED",
-            QString::fromStdString(exError.what())
-        );
-    }
-}
-
-void AttackTestNetworkController::broadcastExecutionStatus(bool bForce)
-{
-    if (!m_ctlExecution.bHasPlan())
+    if (!m_bHighRateTrafficRunning)
     {
         return;
     }
 
-    const std::uint64_t u64Now = u64NowMilliseconds();
-    if (!bForce
-        && u64Now - m_u64LastStatusBroadcastMilliseconds < 250U)
-    {
-        return;
-    }
-    m_u64LastStatusBroadcastMilliseconds = u64Now;
+    m_pHighRateTimer->stop();
+    m_bHighRateTrafficRunning = false;
+    emit logMessage(QStringLiteral("高频无效流量已停止，共广播 %1 条")
+        .arg(m_u64HighRateSentCount));
+    emit stateChanged();
+}
 
-    const QList<QTcpSocket*> listSockets = m_mapClients.keys();
-    for (QTcpSocket* pSocket : listSockets)
-    {
-        const std::shared_ptr<ClientState> ptrClient = m_mapClients.value(pSocket);
-        if (ptrClient && ptrClient->bHelloReceived)
-        {
-            static_cast<void>(bSendExecutionStatus(ptrClient));
-        }
-    }
+bool AttackTestNetworkController::bHighRateTrafficRunning() const noexcept
+{
+    return m_bHighRateTrafficRunning;
 }
 
 void AttackTestNetworkController::processDiscoveryDatagrams()
@@ -834,19 +406,216 @@ void AttackTestNetworkController::processDiscoveryDatagrams()
 
         const NodeDiscoveryMessage& msgMessage =
             std::get<NodeDiscoveryMessage>(resMessage);
+        if (msgMessage.typeMessage()
+            == NodeDiscoveryMessageType::ObservationDisplayReset)
+        {
+            const ObservationDisplayResetDetails& detReset =
+                std::get<ObservationDisplayResetDetails>(
+                    msgMessage.varDetails()
+                );
+            const QString strRoundId = QString::fromStdString(
+                detReset.strRoundId()
+            );
+            if (strRoundId != m_strCurrentRoundId)
+            {
+                m_strCurrentRoundId = strRoundId;
+                m_vecRecords.clear();
+                m_setCurrentRoundChainIds.clear();
+                m_u64RoundFirstDatagramTimestampMilliseconds = 0;
+                emit roundChanged();
+                emit recordsChanged();
+            }
+            continue;
+        }
+
         if (msgMessage.typeMessage() != NodeDiscoveryMessageType::DiscoverRequest)
         {
             continue;
         }
 
-        bSendPresence(
+        const DiscoveryRequestDetails& detRequest =
+            std::get<DiscoveryRequestDetails>(msgMessage.varDetails());
+        static_cast<void>(bSendPresence(
             NodeDiscoveryMessageType::NodeAnnouncement,
-            QString::fromStdString(std::get<DiscoveryRequestDetails>(
-                msgMessage.varDetails()
-            ).strRequestId()),
+            QString::fromStdString(detRequest.strRequestId()),
             adrSource,
             u16SourcePort
+        ));
+    }
+}
+
+void AttackTestNetworkController::processMulticastDatagrams()
+{
+    bool bChanged = false;
+    while (m_pMulticastSocket->hasPendingDatagrams())
+    {
+        QHostAddress adrSource;
+        quint16      u16SourcePort = 0;
+        QByteArray   arrDatagram;
+        arrDatagram.resize(
+            static_cast<qsizetype>(m_pMulticastSocket->pendingDatagramSize())
         );
+        const qint64 nReceived = m_pMulticastSocket->readDatagram(
+            arrDatagram.data(),
+            arrDatagram.size(),
+            &adrSource,
+            &u16SourcePort
+        );
+        if (nReceived < MESSAGE_OFFSET + MESSAGE_SIZE)
+        {
+            continue;
+        }
+        if (adrSource.toString() == m_strLocalIpv4Address
+            && u16SourcePort == m_pBroadcastSocket->localPort())
+        {
+            continue;
+        }
+
+        arrDatagram.resize(static_cast<qsizetype>(nReceived));
+        const UdpAuthenticationPacketHeaderDecodeResult resHeader =
+            UdpAuthenticationPacketCodec::resDecodeHeader(vecBytes(arrDatagram));
+        if (!std::holds_alternative<UdpAuthenticationPacketHeader>(resHeader))
+        {
+            continue;
+        }
+
+        const UdpAuthenticationPacketHeader& hdrPacket =
+            std::get<UdpAuthenticationPacketHeader>(resHeader);
+        if (hdrPacket.u32PacketIndex() == 0)
+        {
+            continue;
+        }
+
+        const std::uint64_t u64CaptureTimestampMilliseconds =
+            u64NowMilliseconds();
+        const qulonglong u64ChainId = static_cast<qulonglong>(
+            hdrPacket.u64ChainId()
+        );
+        if (!m_setCurrentRoundChainIds.contains(u64ChainId))
+        {
+            const bool bStartsNewRound =
+                !m_setCurrentRoundChainIds.isEmpty()
+                && u64CaptureTimestampMilliseconds
+                    > m_u64RoundFirstDatagramTimestampMilliseconds
+                        + ROUND_CHAIN_GROUPING_WINDOW_MILLISECONDS;
+            if (bStartsNewRound)
+            {
+                m_vecRecords.clear();
+                m_setCurrentRoundChainIds.clear();
+                m_u64RoundFirstDatagramTimestampMilliseconds =
+                    u64CaptureTimestampMilliseconds;
+                emit roundChanged();
+            }
+            else if (m_setCurrentRoundChainIds.isEmpty())
+            {
+                m_u64RoundFirstDatagramTimestampMilliseconds =
+                    u64CaptureTimestampMilliseconds;
+            }
+
+            m_setCurrentRoundChainIds.insert(u64ChainId);
+        }
+
+        m_vecRecords.emplaceBack(
+            m_u64NextRecordId++,
+            u64CaptureTimestampMilliseconds,
+            adrSource.toString(),
+            hdrPacket.u64ChainId(),
+            hdrPacket.u32IntervalIndex(),
+            hdrPacket.u32PacketIndex(),
+            arrDatagram
+        );
+        if (m_vecRecords.size() > MAXIMUM_RECORD_COUNT)
+        {
+            m_vecRecords.removeFirst();
+        }
+        bChanged = true;
+    }
+
+    if (bChanged)
+    {
+        emit recordsChanged();
+    }
+}
+
+void AttackTestNetworkController::sendHeartbeat()
+{
+    if (!m_bRunning)
+    {
+        return;
+    }
+
+    QSet<QHostAddress> setTargets;
+    setTargets.insert(QHostAddress::Broadcast);
+    const QHostAddress adrLocal(m_strLocalIpv4Address);
+    for (const QNetworkInterface& infNetwork : QNetworkInterface::allInterfaces())
+    {
+        for (const QNetworkAddressEntry& entAddress : infNetwork.addressEntries())
+        {
+            if (entAddress.ip() == adrLocal && !entAddress.broadcast().isNull())
+            {
+                setTargets.insert(entAddress.broadcast());
+            }
+        }
+    }
+
+    for (const QHostAddress& adrTarget : setTargets)
+    {
+        static_cast<void>(bSendPresence(
+            NodeDiscoveryMessageType::Heartbeat,
+            QString(),
+            adrTarget,
+            m_u16DiscoveryPort
+        ));
+    }
+}
+
+void AttackTestNetworkController::sendHighRateBatch()
+{
+    if (!m_bHighRateTrafficRunning)
+    {
+        return;
+    }
+
+    const qint64 nElapsedMilliseconds = m_tmrHighRateElapsed.elapsed();
+    const std::uint64_t u64TargetCount = static_cast<std::uint64_t>(
+        m_u32HighRatePacketsPerSecond
+    ) * static_cast<std::uint64_t>(std::min<qint64>(
+        nElapsedMilliseconds,
+        m_u32HighRateDurationMilliseconds
+    )) / 1000U;
+    const std::uint64_t u64BatchEnd = std::min<std::uint64_t>(
+        u64TargetCount,
+        m_u64HighRateSentCount + 512U
+    );
+    QString strError;
+    while (m_u64HighRateSentCount < u64BatchEnd)
+    {
+        QByteArray arrDatagram(
+            static_cast<qsizetype>(m_u32HighRateDatagramBytes),
+            static_cast<char>(0xA5)
+        );
+        const QByteArray arrSequence = QByteArray::number(
+            m_u64HighRateSentCount,
+            16
+        );
+        const qsizetype nCopySize = std::min(
+            arrDatagram.size(),
+            arrSequence.size()
+        );
+        arrDatagram.replace(0, nCopySize, arrSequence.left(nCopySize));
+        if (!bBroadcastDatagram(arrDatagram, strError))
+        {
+            emit logMessage(strError);
+            stopHighRateTraffic();
+            return;
+        }
+        ++m_u64HighRateSentCount;
+    }
+
+    if (nElapsedMilliseconds >= m_u32HighRateDurationMilliseconds
+        && m_u64HighRateSentCount >= u64TargetCount)
+    {
+        stopHighRateTraffic();
     }
 }
 
@@ -861,8 +630,8 @@ bool AttackTestNetworkController::bSendPresence(
         typeMessage,
         strRequestId.toStdString(),
         m_strNodeName.toStdString(),
-        NodeRole::Attacker,
-        m_u16ControlPort,
+        NodeRole::AttackTester,
+        0,
         false,
         false,
         u64NowMilliseconds()
@@ -870,24 +639,72 @@ bool AttackTestNetworkController::bSendPresence(
     const QByteArray arrDatagram = QByteArray::fromStdString(
         NodeDiscoveryJsonCodec::strEncode(msgPresence)
     );
-    return m_pDiscoverySocket->writeDatagram(
+    return m_pPresenceSocket->writeDatagram(
         arrDatagram,
         adrTarget,
         u16TargetPort
     ) == arrDatagram.size();
 }
 
-void AttackTestNetworkController::sendHeartbeat()
+bool AttackTestNetworkController::bJoinMulticastGroups()
 {
-    if (!m_bRunning)
+    const QHostAddress adrGroup(m_strMulticastAddress);
+    const QHostAddress adrLocal(m_strLocalIpv4Address);
+    if (adrGroup.protocol() != QAbstractSocket::IPv4Protocol)
     {
-        return;
+        return false;
     }
 
-    QSet<QHostAddress> setTargets;
-    setTargets.insert(QHostAddress::Broadcast);
-    const QList<QNetworkInterface> listInterfaces = QNetworkInterface::allInterfaces();
-    for (const QNetworkInterface& infNetwork : listInterfaces)
+    for (const QNetworkInterface& infNetwork : QNetworkInterface::allInterfaces())
+    {
+        for (const QNetworkAddressEntry& entAddress : infNetwork.addressEntries())
+        {
+            if (entAddress.ip() != adrLocal)
+            {
+                continue;
+            }
+
+            m_pBroadcastSocket->setMulticastInterface(infNetwork);
+            if (m_pMulticastSocket->joinMulticastGroup(adrGroup, infNetwork))
+            {
+                return true;
+            }
+        }
+    }
+
+    return m_pMulticastSocket->joinMulticastGroup(adrGroup);
+}
+
+bool AttackTestNetworkController::bBroadcastDatagram(
+    const QByteArray& arrDatagram,
+    QString& strError
+)
+{
+    if (!m_bRunning || arrDatagram.isEmpty())
+    {
+        strError = QStringLiteral("攻击测试端尚未准备好");
+        return false;
+    }
+
+    if (m_pBroadcastSocket->writeDatagram(
+            arrDatagram,
+            QHostAddress(m_strMulticastAddress),
+            m_u16MulticastPort
+        ) != arrDatagram.size())
+    {
+        strError = QStringLiteral("广播失败：")
+            + m_pBroadcastSocket->errorString();
+        return false;
+    }
+
+    return true;
+}
+
+QString AttackTestNetworkController::strPreferredIpv4Address() const
+{
+    QString strFallback = QStringLiteral("127.0.0.1");
+    int nBestScore = -10000;
+    for (const QNetworkInterface& infNetwork : QNetworkInterface::allInterfaces())
     {
         const QNetworkInterface::InterfaceFlags flgInterface = infNetwork.flags();
         if (!flgInterface.testFlag(QNetworkInterface::IsUp)
@@ -899,108 +716,68 @@ void AttackTestNetworkController::sendHeartbeat()
 
         for (const QNetworkAddressEntry& entAddress : infNetwork.addressEntries())
         {
-            if (entAddress.ip().protocol() == QAbstractSocket::IPv4Protocol
-                && !entAddress.broadcast().isNull())
+            if (entAddress.ip().protocol() != QAbstractSocket::IPv4Protocol)
             {
-                setTargets.insert(entAddress.broadcast());
+                continue;
+            }
+
+            int nScore = bIsPrivateIpv4(entAddress.ip()) ? 100 : 0;
+            if (infNetwork.type() == QNetworkInterface::Ethernet)
+            {
+                nScore += 50;
+            }
+            else if (infNetwork.type() == QNetworkInterface::Wifi)
+            {
+                nScore += 40;
+            }
+
+            const QString strInterfaceText = (
+                infNetwork.name() + QStringLiteral(" ")
+                + infNetwork.humanReadableName()
+            ).toLower();
+            if (strInterfaceText.contains(QStringLiteral("vmware")))
+            {
+                nScore += 30;
+            }
+            if (strInterfaceText.contains(QStringLiteral("wsl"))
+                || strInterfaceText.contains(QStringLiteral("vpn"))
+                || strInterfaceText.contains(QStringLiteral("tailscale")))
+            {
+                nScore -= 80;
+            }
+            if (nScore > nBestScore)
+            {
+                nBestScore = nScore;
+                strFallback = entAddress.ip().toString();
             }
         }
     }
 
-    for (const QHostAddress& adrTarget : setTargets)
-    {
-        bSendPresence(
-            NodeDiscoveryMessageType::Heartbeat,
-            QString(),
-            adrTarget,
-            m_u16DiscoveryPort
-        );
-    }
-}
-
-void AttackTestNetworkController::drainMulticastDatagrams()
-{
-    while (m_pMulticastSocket->hasPendingDatagrams())
-    {
-        QHostAddress adrSource;
-        QByteArray arrDatagram;
-        arrDatagram.resize(
-            static_cast<qsizetype>(m_pMulticastSocket->pendingDatagramSize())
-        );
-        const qint64 nReceived = m_pMulticastSocket->readDatagram(
-            arrDatagram.data(),
-            arrDatagram.size(),
-            &adrSource
-        );
-        if (nReceived <= 0)
-        {
-            continue;
-        }
-
-        arrDatagram.resize(static_cast<qsizetype>(nReceived));
-        m_ctlExecution.processCapturedDatagram(
-            arrDatagram,
-            adrSource.toString(),
-            u64NowMilliseconds()
-        );
-    }
-}
-
-bool AttackTestNetworkController::bJoinMulticastGroups()
-{
-    const QHostAddress adrGroup(m_strMulticastAddress);
-    if (adrGroup.protocol() != QAbstractSocket::IPv4Protocol)
-    {
-        return false;
-    }
-
-    bool bJoined = false;
-    const QList<QNetworkInterface> listInterfaces = QNetworkInterface::allInterfaces();
-    for (const QNetworkInterface& infNetwork : listInterfaces)
-    {
-        const QNetworkInterface::InterfaceFlags flgInterface = infNetwork.flags();
-        if (!flgInterface.testFlag(QNetworkInterface::IsUp)
-            || !flgInterface.testFlag(QNetworkInterface::IsRunning)
-            || !flgInterface.testFlag(QNetworkInterface::CanMulticast))
-        {
-            continue;
-        }
-
-        bool bHasIpv4 = false;
-        for (const QNetworkAddressEntry& entAddress : infNetwork.addressEntries())
-        {
-            bHasIpv4 = bHasIpv4
-                || entAddress.ip().protocol() == QAbstractSocket::IPv4Protocol;
-        }
-
-        if (bHasIpv4 && m_pMulticastSocket->joinMulticastGroup(adrGroup, infNetwork))
-        {
-            bJoined = true;
-        }
-    }
-
-    if (!bJoined)
-    {
-        bJoined = m_pMulticastSocket->joinMulticastGroup(adrGroup);
-    }
-
-    if (!bJoined)
-    {
-        emit logMessage(QStringLiteral("加入TESLA组播组失败：")
-            + m_pMulticastSocket->errorString());
-    }
-    return bJoined;
+    return strFallback;
 }
 
 QString AttackTestNetworkController::strCreateNodeName() const
 {
-    const QString strBestAddress = strPreferredIpv4Address();
+    const QStringList listOctets = m_strLocalIpv4Address.split('.');
+    return listOctets.size() == 4
+        ? QStringLiteral("ROBUSTNESS-%1-%2")
+            .arg(listOctets.last())
+            .arg(QCoreApplication::applicationPid())
+        : QStringLiteral("ROBUSTNESS-LOCAL-%1")
+            .arg(QCoreApplication::applicationPid());
+}
 
-    const QStringList listOctets = strBestAddress.split('.');
-    if (listOctets.size() == 4)
-    {
-        return QStringLiteral("ATTACKER-%1").arg(listOctets.last());
-    }
-
-    return QStringLiteral("ATTACKER-LOCAL");
+const AttackDatagramRecord* AttackTestNetworkController::pFindRecord(
+    std::uint64_t u64RecordId
+) const noexcept
+{
+    const auto itRecord = std::find_if(
+        m_vecRecords.cbegin(),
+        m_vecRecords.cend(),
+        [u64RecordId](const AttackDatagramRecord& recDatagram)
+        {
+            return recDatagram.u64RecordId() == u64RecordId;
+        }
+    );
+    return itRecord == m_vecRecords.cend() ? nullptr : &(*itRecord);
 }
