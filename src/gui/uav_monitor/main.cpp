@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QIcon>
 #include <QTimer>
 
 #include "UavMonitorMainWindow.h"
@@ -9,6 +10,7 @@ int main(int nArgc, char* arrArgv[])
 {
     QApplication appApplication(nArgc, arrArgv);
     QCoreApplication::setApplicationName(QStringLiteral("tesla_uav_monitor_gui"));
+    appApplication.setWindowIcon(QIcon(QStringLiteral(":/icons/uav.png")));
 
     QCommandLineParser prsCommandLine;
     prsCommandLine.addHelpOption();

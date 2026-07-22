@@ -23,11 +23,13 @@
   <ItemGroup>
     <QtMoc Include="$(TeslaSourceRoot)gui\pc_node\PcNodeMainWindow.h" />
     <QtMoc Include="$(TeslaSourceRoot)gui\pc_node\PcNodeNetworkController.h" />
+    <QtRcc Include="$(TeslaSourceRoot)gui\resources\ApplicationIcons.qrc" />
     <ClInclude Include="$(TeslaSourceRoot)gui\pc_node\PcAuthenticationViews.h" />
     <ClInclude Include="$(TeslaSourceRoot)gui\shared\AuthenticationDisplayText.h" />
     <ClInclude Include="$(TeslaSourceRoot)gui\shared\AuthenticationMonitorWidget.h" />
     <ClCompile Include="$(TeslaSourceRoot)gui\pc_node\*.cpp" />
     <ClCompile Include="$(TeslaSourceRoot)gui\shared\AuthenticationMonitorWidget.cpp" />
+    <ResourceCompile Include="$(TeslaSourceRoot)gui\resources\ApplicationPc.rc" />
     <ProjectReference Include="TeslaRuntime.vcxproj"><Project>{15153B15-D21A-465F-B715-32BBC1BE2625}</Project></ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

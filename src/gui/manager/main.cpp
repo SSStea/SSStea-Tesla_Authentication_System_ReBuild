@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QIcon>
 #include <QTimer>
 
 #include "ManagerMainWindow.h"
@@ -11,6 +12,7 @@ int main(int nArgc, char* arrArgv[])
 {
     QApplication appApplication(nArgc, arrArgv);
     QCoreApplication::setApplicationName(QStringLiteral("tesla_manager_gui"));
+    appApplication.setWindowIcon(QIcon(QStringLiteral(":/icons/pc.png")));
 
     QCommandLineParser prsCommandLine;
     prsCommandLine.addHelpOption();

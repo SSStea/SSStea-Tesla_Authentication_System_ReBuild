@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="pc.png">icons/pc.png</file>
+    <file alias="pc_red.png">icons/pc_red.png</file>
+    <file alias="uav.png">icons/uav.png</file>
+  </qresource>
+</RCC>

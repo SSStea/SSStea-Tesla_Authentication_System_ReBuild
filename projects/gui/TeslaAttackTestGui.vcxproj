@@ -22,10 +22,11 @@
   <ItemDefinitionGroup><ClCompile><AdditionalIncludeDirectories>$(TeslaSourceRoot)gui\attack_test;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
     <QtMoc Include="$(TeslaSourceRoot)gui\attack_test\*.h" />
+    <QtRcc Include="$(TeslaSourceRoot)gui\resources\ApplicationIcons.qrc" />
     <ClCompile Include="$(TeslaSourceRoot)gui\attack_test\*.cpp" />
+    <ResourceCompile Include="$(TeslaSourceRoot)gui\resources\ApplicationPcRed.rc" />
     <ProjectReference Include="TeslaRuntime.vcxproj"><Project>{15153B15-D21A-465F-B715-32BBC1BE2625}</Project></ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')"><Import Project="$(QtMsBuild)\qt.targets" /></ImportGroup><ImportGroup Label="ExtensionTargets" />
 </Project>
-

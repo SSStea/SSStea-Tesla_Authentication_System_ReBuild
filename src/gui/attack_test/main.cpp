@@ -3,6 +3,7 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QIcon>
 #include <QTimer>
 
 #include <iostream>
@@ -12,6 +13,9 @@ int main(int nArgc, char* arrArgv[])
     QApplication appApplication(nArgc, arrArgv);
     QCoreApplication::setApplicationName(
         QStringLiteral("tesla_robustness_test_gui")
+    );
+    appApplication.setWindowIcon(
+        QIcon(QStringLiteral(":/icons/pc_red.png"))
     );
 
     QCommandLineParser prsCommandLine;
